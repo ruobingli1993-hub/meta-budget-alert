@@ -1,0 +1,22 @@
+{
+  "accounts": {
+    "750289240467952": {
+      "name": "QMDT—20240103",
+      "alerting": false,
+      "last_checked_at": "2026-07-07T11:07:09",
+      "last_balance": "171975.7",
+      "last_average_daily_spend": "1526.075714285714285714285714",
+      "last_threshold": "4578.227142857142857142857142",
+      "currency": "USD"
+    },
+    "5600626876733411": {
+      "name": "销售三部—新主页账户",
+      "alerting": false,
+      "last_checked_at": "2026-07-07T11:07:10",
+      "last_balance": "26249.16",
+      "last_average_daily_spend": "414.2542857142857142857142857",
+      "last_threshold": "1242.762857142857142857142857",
+      "currency": "USD"
+    }
+  }
+}
