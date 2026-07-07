@@ -152,6 +152,12 @@ def fetch_account_report(api: MetaMarketingAPI, account: ReportAccount) -> Accou
     )
 
 
+def display_account_type(account: ReportAccount) -> str:
+    if account.account_type == "brand":
+        return "Brand Account"
+    return "Performance Account"
+
+
 def build_morning_report(accounts: list[ReportAccount], api: MetaMarketingAPI) -> str:
     if len(accounts) != 3:
         raise ValueError(
@@ -227,7 +233,7 @@ def account_section(reports: list[AccountReport]) -> list[str]:
             [
                 "",
                 f"账户名称：{report.account.name}",
-                f"账户类型：{report.account.account_type}",
+                f"账户类型：{display_account_type(report.account)}",
                 f"Spend: {money(report.today.spend, report.currency)}",
                 f"Purchase: {fmt_number(report.today.purchase)}",
                 f"Revenue / Purchase Value: {money(report.today.revenue, report.currency)}",
@@ -327,7 +333,7 @@ def classify_account(report: AccountReport) -> str:
     today = report.today
     avg_7d = report.last_7d_avg
     avg_30d = report.last_30d_avg
-    if report.account.account_type == "Brand Account":
+    if report.account.account_type == "brand":
         if today.ctr < avg_30d.ctr * Decimal("0.8") and today.frequency > avg_30d.frequency * Decimal("1.3"):
             return "🔴 异常：CTR 下降超过 20%，Frequency 上升超过 30%，广告吸引力可能下降。"
         if today.ctr < avg_30d.ctr * Decimal("0.9") or today.frequency > avg_30d.frequency * Decimal("1.2"):
@@ -373,7 +379,7 @@ def collect_anomalies(
         anomalies.append(f"Overall：余额 {money(balance, currency)} 预计不足 3 天。")
 
     for report in reports:
-        if report.account.account_type == "Brand Account" and (
+        if report.account.account_type == "brand" and (
             report.today.ctr < report.last_30d_avg.ctr * Decimal("0.8")
             and report.today.frequency > report.last_30d_avg.frequency * Decimal("1.3")
         ):
@@ -393,7 +399,7 @@ def observation_section(
     if today.spend > avg_7d.spend and today.purchase <= avg_7d.purchase:
         observations.append(("Overall", "Spend 高于 7D 平均，但 Purchase 未同步增长。", "7D Avg", "观察是否存在预算消耗过快。"))
     for report in reports:
-        if report.account.account_type == "Brand Account" and report.today.ctr < report.last_30d_avg.ctr:
+        if report.account.account_type == "brand" and report.today.ctr < report.last_30d_avg.ctr:
             observations.append((report.account.name, f"CTR 比 30D 平均低 {fmt_percent(percent_change(report.today.ctr, report.last_30d_avg.ctr))}，Frequency 比 30D 高 {fmt_percent(percent_change(report.today.frequency, report.last_30d_avg.frequency))}。", "30D Avg", "检查 Brand 素材疲劳。"))
         elif report.today.spend > report.last_7d_avg.spend and report.today.purchase <= report.last_7d_avg.purchase:
             observations.append((report.account.name, "Spend 比 7D 平均高，但 Purchase 基本持平。", "7D Avg", "观察是否存在预算消耗过快。"))

@@ -30,11 +30,13 @@ After each completed development task, bug fix, or new feature, update this file
 - Manual GitHub Actions run passed.
 - Implemented Morning Report V1 with overall summary, account summaries, campaign ranking, health/anomaly summary, and today's observations.
 - Added `--morning-report` command.
+- Centralized account configuration in `config.py`.
+- Added Jelenew-Brand & Lab as the third Morning Report account.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Morning Report V1 implementation complete.
+- Morning Report account configuration update complete.
 - No active feature development.
 
 ## Environment
@@ -57,7 +59,6 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Configure the third report account ID before running `python main.py --morning-report`.
 - Validate the Feishu Morning Report V1 format locally.
 - After report format validation, push the committed changes to GitHub.
 - Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
@@ -69,7 +70,6 @@ After each completed development task, bug fix, or new feature, update this file
 - Local git commit created for GitHub Actions workflow configuration.
 - GitHub push failed from this shell because it could not connect to `github.com:443`.
 - A local `.env` file exists. Its contents were not read or displayed during the health check.
-- The third Morning Report account ID was not provided in the request; `--morning-report` requires exactly 3 report accounts and will stop until configured.
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
 
 ## Latest Test Results
@@ -85,6 +85,7 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Morning Report fake-data build test: passed.
 - Morning Report output structure includes all five required sections.
 - Campaign action validation confirmed V1 does not output Pause, Scale, or Increase Budget.
+- `python3.14 -c "from config import ACCOUNTS, REPORT_ACCOUNTS; ..."` confirmed Budget Alert has 2 performance accounts and Morning Report has 3 accounts.
 - Local git commit created: `Add Morning Report V1`.
 - Workflow updated to run `python main.py --check-budget` daily at cron `0 1 * * *`.
 - Local git commit created: `Configure daily budget check workflow`.

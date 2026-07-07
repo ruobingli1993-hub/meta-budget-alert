@@ -2,12 +2,17 @@
 
 这个项目用于检查 Meta 广告账户余额。当当前余额低于过去 7 天平均日花费的 3 倍时，通过飞书群机器人发送告警。
 
-## 监控账户
+## 账户配置
 
-| 名称 | Ad Account ID |
-| --- | --- |
-| QMDT—20240103 | 750289240467952 |
-| 销售三部—新主页账户 | 5600626876733411 |
+账户统一维护在 `config.py` 的 `ACCOUNT_CONFIGS` 中：
+
+| 名称 | 类型 | Ad Account ID |
+| --- | --- | --- |
+| QMDT—20240103 | performance | 750289240467952 |
+| 销售三部—新主页账户 | performance | 5600626876733411 |
+| Jelenew-Brand & Lab | brand | 568835832834495 |
+
+预算预警 `--check-budget` 只监控 `performance` 账户。Morning Report V1 会遍历全部三个账户。
 
 ## 安装
 
@@ -89,25 +94,7 @@ python main.py --morning-report
 4. Health & Anomaly Summary
 5. Today's Observation
 
-报告需要正好 3 个账户。默认已包含两个 Performance Account：
-
-| 名称 | 类型 |
-| --- | --- |
-| QMDT—20240103 | Performance Account |
-| 销售三部—新主页账户 | Performance Account |
-
-第三个 Brand Account 需要在 `.env` 中配置：
-
-```env
-JELENEW_BRAND_ACCOUNT_ID=your_jelenew_brand_lab_ad_account_id
-JELENEW_BRAND_ACCOUNT_NAME=Jelenew-Brand & Lab
-```
-
-也可以用 JSON 覆盖全部报告账户：
-
-```env
-MORNING_REPORT_ACCOUNTS_JSON=[{"name":"QMDT—20240103","account_id":"750289240467952","account_type":"Performance Account"},{"name":"销售三部—新主页账户","account_id":"5600626876733411","account_type":"Performance Account"},{"name":"Jelenew-Brand & Lab","account_id":"your_account_id","account_type":"Brand Account"}]
-```
+报告会自动遍历 `config.py` 中配置的三个账户。
 
 Campaign Ranking 的 Action 只会输出：
 

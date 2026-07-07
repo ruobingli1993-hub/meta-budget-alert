@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,18 +11,18 @@ load_dotenv()
 
 
 @dataclass(frozen=True)
-class AdAccount:
+class AccountConfig:
     name: str
     account_id: str
+    account_type: str
 
     @property
     def api_id(self) -> str:
         return f"act_{self.account_id}"
 
 
-@dataclass(frozen=True)
-class ReportAccount(AdAccount):
-    account_type: str
+AdAccount = AccountConfig
+ReportAccount = AccountConfig
 
 
 META_API_VERSION = os.getenv("META_API_VERSION", "v20.0")
@@ -37,44 +36,17 @@ REQUEST_BACKOFF_SECONDS = float(os.getenv("REQUEST_BACKOFF_SECONDS", "2"))
 
 STATE_FILE = Path(os.getenv("STATE_FILE", "state.json"))
 
-ACCOUNTS: list[AdAccount] = [
-    AdAccount(name="QMDT—20240103", account_id="750289240467952"),
-    AdAccount(name="销售三部—新主页账户", account_id="5600626876733411"),
+ACCOUNT_CONFIGS: list[AccountConfig] = [
+    AccountConfig(name="QMDT—20240103", account_id="750289240467952", account_type="performance"),
+    AccountConfig(name="销售三部—新主页账户", account_id="5600626876733411", account_type="performance"),
+    AccountConfig(name="Jelenew-Brand & Lab", account_id="568835832834495", account_type="brand"),
 ]
 
 
-def _load_report_accounts() -> list[ReportAccount]:
-    raw_json = os.getenv("MORNING_REPORT_ACCOUNTS_JSON", "")
-    if raw_json:
-        rows = json.loads(raw_json)
-        return [
-            ReportAccount(
-                name=str(row["name"]),
-                account_id=str(row["account_id"]),
-                account_type=str(row["account_type"]),
-            )
-            for row in rows
-        ]
-
-    accounts = [
-        ReportAccount(name="QMDT—20240103", account_id="750289240467952", account_type="Performance Account"),
-        ReportAccount(name="销售三部—新主页账户", account_id="5600626876733411", account_type="Performance Account"),
-    ]
-
-    brand_account_id = os.getenv("JELENEW_BRAND_ACCOUNT_ID", "")
-    if brand_account_id:
-        accounts.append(
-            ReportAccount(
-                name=os.getenv("JELENEW_BRAND_ACCOUNT_NAME", "Jelenew-Brand & Lab"),
-                account_id=brand_account_id,
-                account_type="Brand Account",
-            )
-        )
-
-    return accounts
-
-
-REPORT_ACCOUNTS = _load_report_accounts()
+ACCOUNTS: list[AdAccount] = [
+    account for account in ACCOUNT_CONFIGS if account.account_type == "performance"
+]
+REPORT_ACCOUNTS: list[ReportAccount] = ACCOUNT_CONFIGS
 
 
 def validate_config() -> None:
