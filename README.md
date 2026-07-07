@@ -73,6 +73,50 @@ python main.py
 python main.py --check-budget
 ```
 
+## Morning Report V1
+
+Morning Report V1 是独立报告命令，不会修改 `state.json`，也不会影响预算预警命令：
+
+```bash
+python main.py --morning-report
+```
+
+报告顺序固定为：
+
+1. Overall Total Summary
+2. Account Performance Summary
+3. Campaign Ranking
+4. Health & Anomaly Summary
+5. Today's Observation
+
+报告需要正好 3 个账户。默认已包含两个 Performance Account：
+
+| 名称 | 类型 |
+| --- | --- |
+| QMDT—20240103 | Performance Account |
+| 销售三部—新主页账户 | Performance Account |
+
+第三个 Brand Account 需要在 `.env` 中配置：
+
+```env
+JELENEW_BRAND_ACCOUNT_ID=your_jelenew_brand_lab_ad_account_id
+JELENEW_BRAND_ACCOUNT_NAME=Jelenew-Brand & Lab
+```
+
+也可以用 JSON 覆盖全部报告账户：
+
+```env
+MORNING_REPORT_ACCOUNTS_JSON=[{"name":"QMDT—20240103","account_id":"750289240467952","account_type":"Performance Account"},{"name":"销售三部—新主页账户","account_id":"5600626876733411","account_type":"Performance Account"},{"name":"Jelenew-Brand & Lab","account_id":"your_account_id","account_type":"Brand Account"}]
+```
+
+Campaign Ranking 的 Action 只会输出：
+
+- 🟢 Keep
+- 🟡 Review
+- 🔴 Urgent Review
+
+V1 不会输出 Pause、Scale、Increase Budget。
+
 ## 去重状态
 
 `state.json` 用于记录每个账户是否已经处于告警状态。只要余额持续低于阈值，就不会重复发送告警；当余额恢复到阈值以上后，再次跌破才会重新发送。

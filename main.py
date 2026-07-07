@@ -8,9 +8,19 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from config import ACCOUNTS, DRY_RUN, FEISHU_WEBHOOK_URL, META_ACCESS_TOKEN, STATE_FILE, AdAccount, validate_config
+from config import (
+    ACCOUNTS,
+    DRY_RUN,
+    FEISHU_WEBHOOK_URL,
+    META_ACCESS_TOKEN,
+    REPORT_ACCOUNTS,
+    STATE_FILE,
+    AdAccount,
+    validate_config,
+)
 from feishu import FeishuError, FeishuWebhookClient
 from meta_api import AccountBudgetSnapshot, MetaAPIError, MetaMarketingAPI
+from morning_report import build_morning_report
 from notifier import BudgetAlertNotifier, money
 
 
@@ -43,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         "--check-budget",
         action="store_true",
         help="Read Meta data, check budget thresholds, send alerts only when needed, and update state.",
+    )
+    parser.add_argument(
+        "--morning-report",
+        action="store_true",
+        help="Generate and send Morning Report V1 without changing budget alert state.",
     )
     return parser.parse_args()
 
@@ -263,6 +278,20 @@ def run_check_budget() -> int:
     return 1 if had_error else 0
 
 
+def run_morning_report() -> int:
+    validate_config()
+
+    try:
+        report = build_morning_report(REPORT_ACCOUNTS, MetaMarketingAPI())
+        FeishuWebhookClient().send_text(report)
+    except (ValueError, MetaAPIError, FeishuError) as exc:
+        print(f"Morning report failed: {exc}")
+        return 1
+
+    print("Morning report sent")
+    return 0
+
+
 if __name__ == "__main__":
     args = parse_args()
     if args.notify_test:
@@ -271,4 +300,6 @@ if __name__ == "__main__":
         raise SystemExit(run_meta_test())
     if args.check_budget:
         raise SystemExit(run_check_budget())
+    if args.morning_report:
+        raise SystemExit(run_morning_report())
     raise SystemExit(run(dry_run=args.dry_run or DRY_RUN))

@@ -70,6 +70,42 @@ class MetaMarketingAPI:
             threshold=threshold,
         )
 
+    def get_account_balance(self, account: AdAccount) -> tuple[Decimal, str]:
+        account_info = self._get_account_info(account)
+        currency = str(account_info.get("currency") or "USD")
+        return self._parse_account_money(account_info.get("balance"), currency), currency
+
+    def get_account_insights(self, account: AdAccount, date_preset: str) -> list[dict[str, Any]]:
+        response = self._request(
+            "GET",
+            f"{self.base_url}/{account.api_id}/insights",
+            params={
+                "fields": "spend,actions,action_values,clicks,impressions,reach",
+                "date_preset": date_preset,
+                "access_token": self.access_token,
+            },
+        )
+        return list(response.get("data", []))
+
+    def get_campaign_insights(
+        self,
+        account: AdAccount,
+        date_preset: str = "today",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        response = self._request(
+            "GET",
+            f"{self.base_url}/{account.api_id}/insights",
+            params={
+                "fields": "campaign_id,campaign_name,spend,actions,action_values,clicks,impressions,reach",
+                "date_preset": date_preset,
+                "level": "campaign",
+                "limit": limit,
+                "access_token": self.access_token,
+            },
+        )
+        return list(response.get("data", []))
+
     def _get_account_info(self, account: AdAccount) -> dict[str, Any]:
         return self._request(
             "GET",

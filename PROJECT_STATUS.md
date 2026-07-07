@@ -26,11 +26,15 @@ After each completed development task, bug fix, or new feature, update this file
 - Added Meta read-only verification mode via `--meta-test`.
 - Added formal budget check mode via `--check-budget`.
 - Configured GitHub Actions daily budget check at Beijing time 09:00.
+- GitHub Actions budget check workflow deployed.
+- Manual GitHub Actions run passed.
+- Implemented Morning Report V1 with overall summary, account summaries, campaign ranking, health/anomaly summary, and today's observations.
+- Added `--morning-report` command.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- GitHub Actions workflow configuration complete.
+- Morning Report V1 implementation complete.
 - No active feature development.
 
 ## Environment
@@ -53,9 +57,10 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Push the workflow changes to GitHub if local git is available.
-- Manually trigger the GitHub Actions workflow from the GitHub Actions tab to verify repository-side execution.
-- Confirm the scheduled run appears for UTC 01:00 / Beijing 09:00.
+- Configure the third report account ID before running `python main.py --morning-report`.
+- Validate the Feishu Morning Report V1 format locally.
+- After report format validation, push the committed changes to GitHub.
+- Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
 
 ## Unresolved Issues
 
@@ -64,6 +69,7 @@ After each completed development task, bug fix, or new feature, update this file
 - Local git commit created for GitHub Actions workflow configuration.
 - GitHub push failed from this shell because it could not connect to `github.com:443`.
 - A local `.env` file exists. Its contents were not read or displayed during the health check.
+- The third Morning Report account ID was not provided in the request; `--morning-report` requires exactly 3 report accounts and will stop until configured.
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
 
 ## Latest Test Results
@@ -75,10 +81,17 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Required `.env` variable presence check: passed.
 - `python3.14 -c "import requests, dotenv"`: passed.
 - `python3.14 -m compileall .`: passed.
-- `python3.14 main.py --help`: passed and confirms `--meta-test` and `--check-budget` are available.
+- `python3.14 main.py --help`: passed and confirms `--meta-test`, `--check-budget`, and `--morning-report` are available.
+- Morning Report fake-data build test: passed.
+- Morning Report output structure includes all five required sections.
+- Campaign action validation confirmed V1 does not output Pause, Scale, or Increase Budget.
+- Local git commit created: `Add Morning Report V1`.
 - Workflow updated to run `python main.py --check-budget` daily at cron `0 1 * * *`.
 - Local git commit created: `Configure daily budget check workflow`.
 - `git push origin main`: failed from this shell because GitHub was unreachable on port 443.
+- `git push origin main`: passed in Windows CMD.
+- GitHub Actions `workflow_dispatch` manual run: passed.
+- `check-budget` job completed successfully.
 - `python main.py --notify-test`: passed in Windows CMD.
 - `python main.py --meta-test`: passed in Windows CMD.
 - QMDT—20240103 returned balance, last 7 days spend, and average daily spend.
