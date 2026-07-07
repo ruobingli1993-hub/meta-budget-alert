@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from config import ReportAccount
-from meta_api import MetaMarketingAPI
+from meta_api import MetaAPIError, MetaMarketingAPI
 from notifier import money
 
+
+logger = logging.getLogger(__name__)
 
 PURCHASE_ACTION_TYPES = (
     "purchase",
@@ -67,6 +70,12 @@ class AccountReport:
     @property
     def estimated_days_remaining(self) -> Decimal:
         return safe_div(self.balance, self.last_7d_avg.spend)
+
+
+@dataclass(frozen=True)
+class AccountReportFailure:
+    account: ReportAccount
+    error_message: str
 
 
 def safe_div(numerator: Decimal, denominator: Decimal) -> Decimal:
@@ -158,14 +167,31 @@ def display_account_type(account: ReportAccount) -> str:
     return "Performance Account"
 
 
+def sanitize_error(exc: Exception) -> str:
+    if isinstance(exc, MetaAPIError):
+        status = exc.http_status_code or "unavailable"
+        code = exc.meta_error_code or "unavailable"
+        return f"HTTP Status Code: {status}; Meta Error Code: {code}; Error Message: {exc}"
+    return type(exc).__name__
+
+
 def build_morning_report(accounts: list[ReportAccount], api: MetaMarketingAPI) -> str:
     if len(accounts) != 3:
         raise ValueError(
-            "Morning Report V1 requires exactly 3 report accounts. Configure MORNING_REPORT_ACCOUNTS_JSON "
-            "or JELENEW_BRAND_ACCOUNT_ID."
+            "Morning Report V1 requires exactly 3 report accounts."
         )
 
-    reports = [fetch_account_report(api, account) for account in accounts]
+    logger.info("Morning Report total configured accounts: %s", len(accounts))
+    results: list[AccountReport | AccountReportFailure] = []
+    for index, account in enumerate(accounts, start=1):
+        logger.info("Processing account %s/%s: %s / %s", index, len(accounts), account.name, account.account_id)
+        try:
+            results.append(fetch_account_report(api, account))
+        except Exception as exc:
+            results.append(AccountReportFailure(account=account, error_message=sanitize_error(exc)))
+
+    reports = [result for result in results if isinstance(result, AccountReport)]
+    failures = [result for result in results if isinstance(result, AccountReportFailure)]
     currency = reports[0].currency if reports else "USD"
     overall_today = combine_metrics([report.today for report in reports])
     overall_7d = combine_metrics([report.last_7d_avg for report in reports])
@@ -175,10 +201,10 @@ def build_morning_report(accounts: list[ReportAccount], api: MetaMarketingAPI) -
 
     lines: list[str] = ["Morning Report V1", ""]
     lines.extend(overall_section(overall_today, overall_7d, overall_30d, total_balance, days_remaining, currency))
-    lines.extend(account_section(reports))
-    lines.extend(campaign_section(reports))
-    lines.extend(health_section(reports, overall_today, overall_7d, overall_30d, total_balance, days_remaining, currency))
-    lines.extend(observation_section(reports, overall_today, overall_7d, overall_30d))
+    lines.extend(account_section(results))
+    lines.extend(campaign_section(results))
+    lines.extend(health_section(reports, failures, overall_today, overall_7d, overall_30d, total_balance, days_remaining, currency))
+    lines.extend(observation_section(reports, failures, overall_today, overall_7d, overall_30d))
     return "\n".join(lines)
 
 
@@ -225,9 +251,25 @@ def overall_section(
     ]
 
 
-def account_section(reports: list[AccountReport]) -> list[str]:
+def failure_lines(failure: AccountReportFailure) -> list[str]:
+    return [
+        "",
+        f"账户名称：{failure.account.name}",
+        f"Account ID：{failure.account.account_id}",
+        f"账户类型：{display_account_type(failure.account)}",
+        "数据获取失败",
+        f"错误原因：{failure.error_message}",
+    ]
+
+
+def account_section(results: list[AccountReport | AccountReportFailure]) -> list[str]:
     lines = ["2. Account Performance Summary"]
-    for report in reports:
+    for result in results:
+        if isinstance(result, AccountReportFailure):
+            lines.extend(failure_lines(result))
+            continue
+
+        report = result
         summary = classify_account(report)
         lines.extend(
             [
@@ -256,9 +298,22 @@ def account_section(reports: list[AccountReport]) -> list[str]:
     return lines
 
 
-def campaign_section(reports: list[AccountReport]) -> list[str]:
+def campaign_section(results: list[AccountReport | AccountReportFailure]) -> list[str]:
     lines = ["3. Campaign Ranking"]
-    for report in reports:
+    for result in results:
+        if isinstance(result, AccountReportFailure):
+            lines.extend(
+                [
+                    "",
+                    result.account.name,
+                    f"Account ID: {result.account.account_id}",
+                    "数据获取失败",
+                    f"错误原因：{result.error_message}",
+                ]
+            )
+            continue
+
+        report = result
         ranked = sorted(report.campaigns, key=lambda item: (item[1].roas, item[1].purchase, -item[1].spend), reverse=True)
         bottom = sorted(report.campaigns, key=lambda item: (item[1].roas, item[1].purchase, item[1].spend))
         lines.extend(["", report.account.name, "Top 5 Campaign"])
@@ -303,6 +358,7 @@ def campaign_action(metric: Metrics, report: AccountReport) -> str:
 
 def health_section(
     reports: list[AccountReport],
+    failures: list[AccountReportFailure],
     today: Metrics,
     avg_7d: Metrics,
     avg_30d: Metrics,
@@ -314,8 +370,10 @@ def health_section(
     lines.extend(["", "【Account Health】"])
     for report in reports:
         lines.append(f"{report.account.name}：{classify_account(report)}")
+    for failure in failures:
+        lines.append(f"{failure.account.name}：🔴 异常，数据获取失败。")
     lines.extend(["", "【Main Anomalies】"])
-    anomalies = collect_anomalies(reports, today, avg_7d, avg_30d, balance, days_remaining, currency)
+    anomalies = collect_anomalies(reports, failures, today, avg_7d, avg_30d, balance, days_remaining, currency)
     lines.extend(anomalies[:5] or ["No major anomaly found."])
     lines.append("")
     return lines
@@ -357,6 +415,7 @@ def classify_account(report: AccountReport) -> str:
 
 def collect_anomalies(
     reports: list[AccountReport],
+    failures: list[AccountReportFailure],
     today: Metrics,
     avg_7d: Metrics,
     avg_30d: Metrics,
@@ -378,6 +437,9 @@ def collect_anomalies(
     if days_remaining < Decimal("3"):
         anomalies.append(f"Overall：余额 {money(balance, currency)} 预计不足 3 天。")
 
+    for failure in failures:
+        anomalies.append(f"{failure.account.name}：数据获取失败，需检查账户权限或 API 返回。")
+
     for report in reports:
         if report.account.account_type == "brand" and (
             report.today.ctr < report.last_30d_avg.ctr * Decimal("0.8")
@@ -389,6 +451,7 @@ def collect_anomalies(
 
 def observation_section(
     reports: list[AccountReport],
+    failures: list[AccountReportFailure],
     today: Metrics,
     avg_7d: Metrics,
     avg_30d: Metrics,
@@ -403,6 +466,8 @@ def observation_section(
             observations.append((report.account.name, f"CTR 比 30D 平均低 {fmt_percent(percent_change(report.today.ctr, report.last_30d_avg.ctr))}，Frequency 比 30D 高 {fmt_percent(percent_change(report.today.frequency, report.last_30d_avg.frequency))}。", "30D Avg", "检查 Brand 素材疲劳。"))
         elif report.today.spend > report.last_7d_avg.spend and report.today.purchase <= report.last_7d_avg.purchase:
             observations.append((report.account.name, "Spend 比 7D 平均高，但 Purchase 基本持平。", "7D Avg", "观察是否存在预算消耗过快。"))
+    for failure in failures:
+        observations.append((failure.account.name, "数据获取失败。", "Meta API", "检查账户权限、Account ID 和 Token 授权范围。"))
 
     lines = ["5. Today's Observation"]
     for index, (target, finding, baseline, action) in enumerate(observations[:5], start=1):
