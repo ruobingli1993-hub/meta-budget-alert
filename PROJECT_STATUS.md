@@ -25,13 +25,13 @@ After each completed development task, bug fix, or new feature, update this file
 - Added Feishu connectivity test mode via `--notify-test`.
 - Added Meta read-only verification mode via `--meta-test`.
 - Added formal budget check mode via `--check-budget`.
+- Configured GitHub Actions daily budget check at Beijing time 09:00.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Formal budget check command implementation complete.
+- GitHub Actions workflow configuration complete.
 - No active feature development.
-- GitHub Actions setup is intentionally paused per user instruction.
 
 ## Environment
 
@@ -41,7 +41,10 @@ After each completed development task, bug fix, or new feature, update this file
 - Python dependencies: `requests` and `python-dotenv` are importable.
 - Feishu webhook real test passed.
 - Meta API real read passed.
-- Git: not installed or not available in this shell.
+- GitHub Secrets are configured by the user:
+  - `META_ACCESS_TOKEN`
+  - `FEISHU_WEBHOOK_URL`
+- Git: available at `C:\Program Files\Git\cmd\git.exe`.
 - `.env`: exists.
 - `.env` required variables:
   - `META_ACCESS_TOKEN`: set.
@@ -50,18 +53,16 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Run `python main.py --check-budget` from Windows CMD to perform the first real budget check.
-- If no account is below threshold, confirm the terminal prints only `No alert needed`.
-- If an account is below threshold, confirm Feishu receives one formal alert for that account.
-- Run `python main.py --check-budget` a second time while still below threshold to confirm `state.json` prevents duplicate alerts.
-- Install Git if source-control checks are needed locally.
-- Keep GitHub Actions paused until explicitly requested.
+- Push the workflow changes to GitHub if local git is available.
+- Manually trigger the GitHub Actions workflow from the GitHub Actions tab to verify repository-side execution.
+- Confirm the scheduled run appears for UTC 01:00 / Beijing 09:00.
 
 ## Unresolved Issues
 
 - The default `python`, `py`, and `python3` launchers in this Windows environment point to Windows Apps stubs and are not usable here.
-- `git` is not available in this shell, so git status checks could not be performed.
 - The Codex shell blocks outbound socket connections, but Windows CMD real-environment validation passed.
+- Local git commit created for GitHub Actions workflow configuration.
+- GitHub push failed from this shell because it could not connect to `github.com:443`.
 - A local `.env` file exists. Its contents were not read or displayed during the health check.
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
 
@@ -75,6 +76,9 @@ Last checked: 2026-07-07 Asia/Shanghai
 - `python3.14 -c "import requests, dotenv"`: passed.
 - `python3.14 -m compileall .`: passed.
 - `python3.14 main.py --help`: passed and confirms `--meta-test` and `--check-budget` are available.
+- Workflow updated to run `python main.py --check-budget` daily at cron `0 1 * * *`.
+- Local git commit created: `Configure daily budget check workflow`.
+- `git push origin main`: failed from this shell because GitHub was unreachable on port 443.
 - `python main.py --notify-test`: passed in Windows CMD.
 - `python main.py --meta-test`: passed in Windows CMD.
 - QMDT—20240103 returned balance, last 7 days spend, and average daily spend.

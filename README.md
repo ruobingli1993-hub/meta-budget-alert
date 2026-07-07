@@ -70,23 +70,50 @@ python main.py
 确认 `.env` 中配置了真实的 `META_ACCESS_TOKEN` 和 `FEISHU_WEBHOOK_URL` 后运行：
 
 ```bash
-python main.py
+python main.py --check-budget
 ```
 
 ## 去重状态
 
 `state.json` 用于记录每个账户是否已经处于告警状态。只要余额持续低于阈值，就不会重复发送告警；当余额恢复到阈值以上后，再次跌破才会重新发送。
 
+## GitHub Actions
+
+仓库已包含 GitHub Actions workflow：
+
+```text
+.github/workflows/check_budget.yml
+```
+
+它会在北京时间每天 09:00 自动运行一次。GitHub Actions 使用 UTC 时间，因此对应 cron 为：
+
+```yaml
+0 1 * * *
+```
+
+运行命令：
+
+```bash
+python main.py --check-budget
+```
+
+需要在 GitHub 仓库的 Secrets 中配置：
+
+| Secret | 说明 |
+| --- | --- |
+| `META_ACCESS_TOKEN` | Meta Marketing API Access Token |
+| `FEISHU_WEBHOOK_URL` | 飞书群机器人 Webhook |
+
 ## Linux Cron
 
-北京时间每天 09:00 和 18:00 执行：
+北京时间每天 09:00 执行：
 
 ```cron
-0 9,18 * * * cd /path/to/meta-budget-alert && /path/to/meta-budget-alert/.venv/bin/python main.py >> /path/to/meta-budget-alert/budget-alert.log 2>&1
+0 9 * * * cd /path/to/meta-budget-alert && /path/to/meta-budget-alert/.venv/bin/python main.py --check-budget >> /path/to/meta-budget-alert/budget-alert.log 2>&1
 ```
 
 如果服务器使用 UTC 时区：
 
 ```cron
-0 1,10 * * * cd /path/to/meta-budget-alert && /path/to/meta-budget-alert/.venv/bin/python main.py >> /path/to/meta-budget-alert/budget-alert.log 2>&1
+0 1 * * * cd /path/to/meta-budget-alert && /path/to/meta-budget-alert/.venv/bin/python main.py --check-budget >> /path/to/meta-budget-alert/budget-alert.log 2>&1
 ```
