@@ -288,7 +288,10 @@ def run_morning_report() -> int:
         print(f"Morning report failed: {exc}")
         return 1
 
-    print("Morning report sent")
+    if report.startswith("⚠️ Meta Morning Report 数据获取失败"):
+        print("Morning report failure notice sent")
+    else:
+        print("Morning report sent")
     return 0
 
 

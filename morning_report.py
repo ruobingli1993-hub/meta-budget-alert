@@ -175,6 +175,24 @@ def sanitize_error(exc: Exception) -> str:
     return type(exc).__name__
 
 
+def log_account_failure(account: ReportAccount, exc: Exception) -> None:
+    if isinstance(exc, MetaAPIError):
+        logger.error(
+            "Morning Report Meta API failed | account_id=%s | HTTP status code=%s | Meta error code=%s | Meta error message=%s",
+            account.account_id,
+            exc.http_status_code or "unavailable",
+            exc.meta_error_code or "unavailable",
+            str(exc),
+        )
+        return
+
+    logger.error(
+        "Morning Report Meta API failed | account_id=%s | HTTP status code=unavailable | Meta error code=unavailable | Meta error message=%s",
+        account.account_id,
+        type(exc).__name__,
+    )
+
+
 def log_raw_insights(account: ReportAccount, date_preset: str, rows: list[dict[str, Any]]) -> None:
     raw = metric_from_rows(rows) if rows else Metrics()
     logger.info(
@@ -228,9 +246,14 @@ def build_morning_report(accounts: list[ReportAccount], api: MetaMarketingAPI) -
         try:
             results.append(fetch_account_report(api, account))
         except Exception as exc:
+            log_account_failure(account, exc)
             results.append(AccountReportFailure(account=account, error_message=sanitize_error(exc)))
 
     reports = [result for result in results if isinstance(result, AccountReport)]
+    failures = [result for result in results if isinstance(result, AccountReportFailure)]
+    if len(failures) == len(accounts):
+        return build_all_failed_report(failures)
+
     currency = reports[0].currency if reports else "USD"
     overall_today = combine_metrics([report.today for report in reports])
     total_balance = sum_correct_balances(reports)
@@ -241,6 +264,27 @@ def build_morning_report(accounts: list[ReportAccount], api: MetaMarketingAPI) -
     lines.extend(overall_section(overall_today, total_balance, estimated_days, currency))
     lines.extend(account_section(results))
     lines.extend(campaign_section(results))
+    return "\n".join(lines)
+
+
+def build_all_failed_report(failures: list[AccountReportFailure]) -> str:
+    lines = [
+        "⚠️ Meta Morning Report 数据获取失败",
+        "",
+        "所有账户 Meta API 请求失败，本次报告不可用于判断投放表现。",
+        "",
+        "失败账户：",
+    ]
+    for failure in failures:
+        lines.extend(
+            [
+                "",
+                f"账户名称：{failure.account.name}",
+                f"Account ID：{failure.account.account_id}",
+                "数据获取失败",
+                f"错误原因：{failure.error_message}",
+            ]
+        )
     return "\n".join(lines)
 
 
