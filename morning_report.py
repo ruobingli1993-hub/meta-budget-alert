@@ -89,6 +89,12 @@ def as_decimal(value: Any) -> Decimal:
     return Decimal(str(value or "0"))
 
 
+def required_decimal(row: dict[str, Any], field: str) -> Decimal:
+    if field not in row:
+        raise ValueError(f"Insights row missing required field: {field}")
+    return as_decimal(row.get(field))
+
+
 def extract_action_value(actions: list[dict[str, Any]]) -> Decimal:
     by_type = {str(row.get("action_type")): as_decimal(row.get("value")) for row in actions}
     for action_type in PURCHASE_ACTION_TYPES:
@@ -101,12 +107,12 @@ def metric_from_rows(rows: list[dict[str, Any]]) -> Metrics:
     total = Metrics()
     for row in rows:
         total = Metrics(
-            spend=total.spend + as_decimal(row.get("spend")),
+            spend=total.spend + required_decimal(row, "spend"),
             purchase=total.purchase + extract_action_value(row.get("actions", [])),
             revenue=total.revenue + extract_action_value(row.get("action_values", [])),
-            clicks=total.clicks + as_decimal(row.get("clicks")),
-            impressions=total.impressions + as_decimal(row.get("impressions")),
-            reach=total.reach + as_decimal(row.get("reach")),
+            clicks=total.clicks + required_decimal(row, "clicks"),
+            impressions=total.impressions + required_decimal(row, "impressions"),
+            reach=total.reach + required_decimal(row, "reach"),
         )
     return total
 
@@ -169,11 +175,38 @@ def sanitize_error(exc: Exception) -> str:
     return type(exc).__name__
 
 
+def log_raw_insights(account: ReportAccount, date_preset: str, rows: list[dict[str, Any]]) -> None:
+    raw = metric_from_rows(rows) if rows else Metrics()
+    logger.info(
+        "Morning Report Meta raw insights | account_id=%s | date_preset=%s | raw spend=%s | raw impressions=%s | raw clicks=%s | raw purchase=%s | raw purchase value=%s",
+        account.account_id,
+        date_preset,
+        raw.spend,
+        raw.impressions,
+        raw.clicks,
+        raw.purchase,
+        raw.revenue,
+    )
+    if date_preset == "today" and raw.spend == 0:
+        logger.warning(
+            "Morning Report today raw spend is 0 for account_id=%s. Check Meta account timezone, permissions, and whether delivery has started today.",
+            account.account_id,
+        )
+
+
 def fetch_account_report(api: MetaMarketingAPI, account: ReportAccount) -> AccountReport:
     correct_balance, currency = api.get_spend_limit_balance(account)
-    today = metric_from_rows(api.get_account_insights(account, "today"))
-    last_7d_avg = metric_from_rows(api.get_account_insights(account, "last_7d")).daily_average(7)
-    campaigns = campaign_metrics_from_rows(api.get_campaign_insights(account, "today"))
+    today_rows = api.get_account_insights(account, "today")
+    log_raw_insights(account, "today", today_rows)
+    today = metric_from_rows(today_rows)
+
+    last_7d_rows = api.get_account_insights(account, "last_7d")
+    log_raw_insights(account, "last_7d", last_7d_rows)
+    last_7d_avg = metric_from_rows(last_7d_rows).daily_average(7)
+
+    campaign_rows = api.get_campaign_insights(account, "today")
+    log_raw_insights(account, "today campaign", campaign_rows)
+    campaigns = campaign_metrics_from_rows(campaign_rows)
     return AccountReport(
         account=account,
         currency=currency,

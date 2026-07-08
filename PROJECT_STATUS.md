@@ -39,11 +39,13 @@ After each completed development task, bug fix, or new feature, update this file
 - Changed Morning Report balance source to account spend limit remaining balance.
 - Changed Morning Report CTR display to plain percentages without leading plus signs.
 - Changed Morning Report Campaign Ranking to Top 1 Campaign and Bottom 1 Campaign.
+- Added Morning Report Meta insights debug logs for raw spend, impressions, clicks, purchase, and purchase value.
+- Changed Morning Report insights parsing so missing required insight fields become account-level data fetch failures instead of silently becoming zero.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Morning Report V1 simplified balance/format fix complete.
+- Morning Report real Meta insights debug/failure handling fix complete.
 - No active feature development.
 
 ## Environment
@@ -100,11 +102,13 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Correct Balance displays account spend limit remaining balance when available, otherwise `Balance source unavailable`.
 - CTR fields now render as plain percentages, for example `2.00%`.
 - Campaign Ranking now renders Top 1 Campaign and Bottom 1 Campaign for each account.
+- Morning Report real insights mapping fake-data test: passed.
+- Morning Report missing spend failure test: passed.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:
   - Processing account 1/3: QMDT—20240103 / `750289240467952`
   - Processing account 2/3: 销售三部—新主页账户 / `5600626876733411`
   - Processing account 3/3: Jelenew-Brand & Lab / `568835832834495`
-- Codex shell real run still failed to connect externally, so Feishu send did not complete here.
+- Codex shell real run still failed to connect externally, so real Meta raw insights debug rows were not available here and Feishu send did not complete.
 - Local git commit created: `Add Morning Report V1`.
 - Workflow updated to run `python main.py --check-budget` daily at cron `0 1 * * *`.
 - Local git commit created: `Configure daily budget check workflow`.
