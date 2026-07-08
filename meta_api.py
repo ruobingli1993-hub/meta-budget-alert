@@ -75,6 +75,25 @@ class MetaMarketingAPI:
         currency = str(account_info.get("currency") or "USD")
         return self._parse_account_money(account_info.get("balance"), currency), currency
 
+    def get_spend_limit_balance(self, account: AdAccount) -> tuple[Decimal | None, str]:
+        account_info = self._request(
+            "GET",
+            f"{self.base_url}/{account.api_id}",
+            params={
+                "fields": "account_spend_limit,amount_spent,currency",
+                "access_token": self.access_token,
+            },
+        )
+        currency = str(account_info.get("currency") or "USD")
+        raw_limit = account_info.get("account_spend_limit")
+        if raw_limit in (None, "", "0", 0):
+            return None, currency
+
+        spend_limit = self._parse_account_money(raw_limit, currency)
+        amount_spent = self._parse_account_money(account_info.get("amount_spent"), currency)
+        available = spend_limit - amount_spent
+        return max(available, Decimal("0")), currency
+
     def get_account_insights(self, account: AdAccount, date_preset: str) -> list[dict[str, Any]]:
         response = self._request(
             "GET",

@@ -35,11 +35,15 @@ After each completed development task, bug fix, or new feature, update this file
 - Fixed Morning Report account traversal so all three configured accounts are processed.
 - Added per-account failure reporting in Morning Report output.
 - Added Morning Report terminal progress logs for configured account count and per-account processing.
+- Simplified Morning Report V1 to Overall Total Summary, Account Performance Summary, and Campaign Ranking only.
+- Changed Morning Report balance source to account spend limit remaining balance.
+- Changed Morning Report CTR display to plain percentages without leading plus signs.
+- Changed Morning Report Campaign Ranking to Top 1 Campaign and Bottom 1 Campaign.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Morning Report three-account traversal fix complete.
+- Morning Report V1 simplified balance/format fix complete.
 - No active feature development.
 
 ## Environment
@@ -91,6 +95,11 @@ Last checked: 2026-07-07 Asia/Shanghai
 - `python3.14 -c "from config import ACCOUNTS, REPORT_ACCOUNTS; ..."` confirmed Budget Alert has 2 performance accounts and Morning Report has 3 accounts.
 - Morning Report all-three-accounts fake-data test: passed.
 - Morning Report failed-account visibility test: passed.
+- Morning Report simplified fake-data test: passed.
+- Simplified report no longer includes Health & Anomaly Summary, Today's Observation, or campaign action judgments.
+- Correct Balance displays account spend limit remaining balance when available, otherwise `Balance source unavailable`.
+- CTR fields now render as plain percentages, for example `2.00%`.
+- Campaign Ranking now renders Top 1 Campaign and Bottom 1 Campaign for each account.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:
   - Processing account 1/3: QMDT—20240103 / `750289240467952`
   - Processing account 2/3: 销售三部—新主页账户 / `5600626876733411`

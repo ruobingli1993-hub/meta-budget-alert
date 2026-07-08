@@ -91,18 +91,22 @@ python main.py --morning-report
 1. Overall Total Summary
 2. Account Performance Summary
 3. Campaign Ranking
-4. Health & Anomaly Summary
-5. Today's Observation
 
 报告会自动遍历 `config.py` 中配置的三个账户。
 
-Campaign Ranking 的 Action 只会输出：
+Morning Report 的 Balance 使用账户花费限额剩余额度：
 
-- 🟢 Keep
-- 🟡 Review
-- 🔴 Urgent Review
+```text
+account_spend_limit - amount_spent
+```
 
-V1 不会输出 Pause、Scale、Increase Budget。
+如果 Meta API 没有返回账户花费限额，报告会显示：
+
+```text
+Balance source unavailable
+```
+
+Campaign Ranking 暂时只输出每个账户的 Top 1 Campaign 和 Bottom 1 Campaign，不输出 Pause、Scale、Increase Budget 或其他强动作建议。
 
 ## 去重状态
 
