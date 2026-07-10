@@ -4,4 +4,7 @@ __pycache__/
 *.py[cod]
 *.log
 logs/
+data/approvals/*.json
+data/reviews/*.json
+data/rule_feedback/*.json
 .pytest_cache/

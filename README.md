@@ -153,6 +153,52 @@ skills/budget_manager/config.json
 
 运行日志和快照保存在 `logs/` 下，本地不会提交。
 
+## Meta Automation Dashboard V1
+
+Dashboard is a local Streamlit workspace for reviewing Budget Manager Preview suggestions.
+
+Start it from Windows CMD:
+
+```cmd
+streamlit run dashboard/app.py
+```
+
+Local address:
+
+```text
+http://localhost:8501
+```
+
+Dashboard V1 only reads local files and does not call Meta API:
+
+- `logs/budget_previews/<RUN_ID>.json`
+- `data/approvals/<RUN_ID>.json`
+- `data/rule_feedback/*.json`
+
+Approval records are saved to:
+
+```text
+data/approvals/<RUN_ID>.json
+```
+
+The dashboard supports Overall Summary, Account Status, Budget Review Queue, Approve / Reject / Skip records, Batch Reject, Batch Skip, Rule Feedback summary, and rejection summary export.
+
+Approve only means "review approved" in Dashboard V1. It does not execute Meta API writes or change any real budget.
+
+Feishu Budget Manager Preview messages are now concise summaries with a View More line. Set the optional environment variable:
+
+```env
+DASHBOARD_URL=http://localhost:8501
+```
+
+If `DASHBOARD_URL` is not configured, Feishu shows:
+
+```text
+Dashboard URL not configured
+```
+
+Close the dashboard with `Ctrl+C` in the terminal where Streamlit is running.
+
 ## GitHub Actions
 
 仓库已包含 GitHub Actions workflow：

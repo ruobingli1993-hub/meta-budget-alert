@@ -63,10 +63,16 @@ After each completed development task, bug fix, or new feature, update this file
 - Refactored Morning Report and Budget Manager Preview to consume the same Meta Data Provider for insights parsing and account timezone date windows.
 - Added Provider log output at `logs/meta_data_provider.log`.
 - Added provider-level tests for Today parsing, last 3 complete days, QMDT-style ROAS parsing, event deduplication, API ERROR, EMPTY data, Account Regime ROAS protection, Learning Status cleanup, and Morning/Budget data consistency.
+- Added Streamlit Dashboard V1 under `dashboard/`.
+- Added local approval records at `data/approvals/<RUN_ID>.json`.
+- Added Rule Feedback export at `data/rule_feedback/rejection_summary_<date>.json`.
+- Added Dashboard runtime log at `logs/dashboard.log`.
+- Added concise Feishu Budget Manager Preview summary with `DASHBOARD_URL` support.
+- Added Dashboard tests for preview loading, summaries, account status, Approve, Reject, Skip, original preview protection, filters, approval stats, Rule Feedback, missing `DASHBOARD_URL`, no Meta API calls, and no real write execution.
 
 ## Current Work
 
-- Unified Meta data layer refactor complete.
+- Dashboard and unified approval center V1 complete.
 - No active feature development.
 
 ## Environment
@@ -91,6 +97,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 - Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
 - Run `python main.py --morning-report` in Windows CMD before preview and compare Today Spend / Purchase / ROAS for the same account across both outputs.
+- Start Dashboard locally with `streamlit run dashboard/app.py`.
+- Review and record Budget Manager Preview decisions in Dashboard before any future apply step.
 - Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
 - Review `logs/meta_data_provider.log` for unified request/debug data.
 - Do not run `--budget-manager-apply` until preview is confirmed.
@@ -107,6 +115,8 @@ After each completed development task, bug fix, or new feature, update this file
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
 - Budget Manager Preview and Morning Report need one real Windows CMD comparison run to confirm Today Spend / Purchase / ROAS now match through the shared Provider.
 - No real budget apply has been executed.
+- Dashboard V1 is local-only and has not been publicly deployed.
+- Streamlit is added to `requirements.txt`; the Codex shell does not currently have Streamlit installed, so the Dashboard server was not started here.
 
 ## Latest Test Results
 
@@ -139,10 +149,13 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Budget Manager run-log/report implementation validation: passed.
 - Budget Manager Preview parser/regime fake-data test: passed.
 - Unified Meta Data Provider tests: passed, 9 tests.
+- Dashboard tests: passed, 10 tests.
 - `python3.14 -m compileall main.py skills\budget_manager`: passed.
 - `python3.14 -m compileall main.py morning_report.py meta_data_provider.py skills\budget_manager tests`: passed.
 - `python3.14 -m unittest tests.test_meta_data_provider`: passed.
+- `python3.14 -m unittest tests.test_dashboard tests.test_meta_data_provider`: passed, 19 tests.
 - `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
+- `python3.14 -c "import streamlit"`: failed in Codex shell because Streamlit is not installed in this environment; install with `pip install -r requirements.txt` in Windows CMD.
 - `git diff --check`: passed.
 - Real `python main.py --budget-manager-preview` was not run by Codex for this fix because it sends a Feishu preview; next validation should be run by the user in Windows CMD.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:

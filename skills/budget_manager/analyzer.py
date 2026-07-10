@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from config import ACCOUNT_CONFIGS, META_ACCESS_TOKEN
+from dashboard.data_loader import build_feishu_daily_summary, load_preview
 from feishu import FeishuWebhookClient
 from meta_api import MetaAPIError, MetaMarketingAPI
 from meta_data_provider import EntityInfo, InsightRecord, MetaDataProvider, decimal_or_zero
@@ -104,10 +105,11 @@ def preview() -> dict[str, Any]:
     print("Preview generated...")
     message = format_preview(snapshot)
     print(message)
+    feishu_message = build_feishu_daily_summary(load_preview(Path(config["preview_log_dir"]) / f"{run_id}.json"))
     errors: list[str] = []
     status = audit.overall_status(snapshot["recommendations"])
     try:
-        FeishuWebhookClient().send_text(message)
+        FeishuWebhookClient().send_text(feishu_message)
         print("Feishu preview sent...")
     except Exception as exc:
         status = "FAILED"
