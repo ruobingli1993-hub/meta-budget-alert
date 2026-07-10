@@ -9,6 +9,7 @@ from typing import Any
 from config import ACCOUNT_CONFIGS
 from feishu import FeishuWebhookClient
 from meta_api import MetaMarketingAPI
+from meta_data_provider import MetaDataProvider, parse_budget
 from skills.budget_manager import audit
 from skills.budget_manager import analyzer, rules
 
@@ -158,7 +159,7 @@ def create_backup(api: MetaMarketingAPI, run_id: str, rows: list[dict[str, Any]]
 
 def read_budget(api: MetaMarketingAPI, entity_id: str, currency: str) -> str:
     payload = api._request("GET", f"{api.base_url}/{entity_id}", params={"fields": "daily_budget", "access_token": api.access_token})
-    budget = analyzer.parse_budget(payload.get("daily_budget"), currency)
+    budget = parse_budget(payload.get("daily_budget"), currency)
     return str(budget or "0")
 
 
@@ -181,11 +182,12 @@ def format_apply_result(run_id: str, results: list[dict[str, Any]], backup: dict
 
 
 def validate_preview_still_current(api: MetaMarketingAPI, rows: list[dict[str, Any]], config: dict[str, Any]) -> None:
+    provider = MetaDataProvider(api)
     fresh_rows: list[dict[str, Any]] = []
     for account in ACCOUNT_CONFIGS:
         if account.account_type != config["performance_account_type"]:
             continue
-        fresh_rows.extend([item.__dict__ for item in analyzer.analyze_account(api, account, config)])
+        fresh_rows.extend([item.__dict__ for item in analyzer.analyze_account(provider, account, config)])
 
     fresh_by_key = {preview_key(row): row for row in fresh_rows}
     core_fields = [

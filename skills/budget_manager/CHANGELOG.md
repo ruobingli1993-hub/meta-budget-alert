@@ -1,5 +1,24 @@
 # Budget Manager Changelog
 
+## v1.3 - 2026-07-10
+
+### Added
+
+- Unified Meta Data Provider shared by Morning Report and Budget Manager.
+- Provider-level audit log at `logs/meta_data_provider.log`.
+- Tests for Today parsing, last 3 complete days date windows, event priority/deduplication, API ERROR, EMPTY data, Account Regime ROAS protection, Learning Status cleanup, and Morning/Budget consistency.
+
+### Fixed
+
+- Budget Manager no longer maintains its own Meta insights request and action parsing logic.
+- Account Regime blocks classification when account-level 3D ROAS or Provider status is unavailable.
+- Learning Status is fully separated from API result status.
+
+### Known Limitations
+
+- A real Windows CMD comparison run is still required for `--morning-report` and `--budget-manager-preview`.
+- Apply remains manual only and must not be run until shared Provider data is verified.
+
 ## v1.2 - 2026-07-10
 
 ### Fixed

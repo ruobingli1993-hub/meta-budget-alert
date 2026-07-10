@@ -59,10 +59,14 @@ After each completed development task, bug fix, or new feature, update this file
   - Account Regime no longer reports `BEAR` when account-level 3D ROAS is unavailable.
   - Learning Status now displays only confirmed Meta learning states; otherwise it displays `N/A`.
   - Single-run reports now include a Debug Details section for GPT review.
+- Added a unified Meta Data Provider in `meta_data_provider.py`.
+- Refactored Morning Report and Budget Manager Preview to consume the same Meta Data Provider for insights parsing and account timezone date windows.
+- Added Provider log output at `logs/meta_data_provider.log`.
+- Added provider-level tests for Today parsing, last 3 complete days, QMDT-style ROAS parsing, event deduplication, API ERROR, EMPTY data, Account Regime ROAS protection, Learning Status cleanup, and Morning/Budget data consistency.
 
 ## Current Work
 
-- Budget Manager Preview data/debug fix complete.
+- Unified Meta data layer refactor complete.
 - No active feature development.
 
 ## Environment
@@ -86,7 +90,9 @@ After each completed development task, bug fix, or new feature, update this file
 ## Suggested Next Steps
 
 - Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
+- Run `python main.py --morning-report` in Windows CMD before preview and compare Today Spend / Purchase / ROAS for the same account across both outputs.
 - Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
+- Review `logs/meta_data_provider.log` for unified request/debug data.
 - Do not run `--budget-manager-apply` until preview is confirmed.
 - After report format validation, push the committed changes to GitHub.
 - Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
@@ -99,7 +105,7 @@ After each completed development task, bug fix, or new feature, update this file
 - GitHub push failed from this shell because it could not connect to `github.com:443`.
 - A local `.env` file exists. Its contents were not read or displayed during the health check.
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
-- Budget Manager Preview needs one more real Windows CMD run to confirm Today spend and Today ROAS now match Meta account-timezone data.
+- Budget Manager Preview and Morning Report need one real Windows CMD comparison run to confirm Today Spend / Purchase / ROAS now match through the shared Provider.
 - No real budget apply has been executed.
 
 ## Latest Test Results
@@ -132,7 +138,10 @@ Last checked: 2026-07-07 Asia/Shanghai
 - GitHub Actions workflow unchanged for Budget Manager work.
 - Budget Manager run-log/report implementation validation: passed.
 - Budget Manager Preview parser/regime fake-data test: passed.
+- Unified Meta Data Provider tests: passed, 9 tests.
 - `python3.14 -m compileall main.py skills\budget_manager`: passed.
+- `python3.14 -m compileall main.py morning_report.py meta_data_provider.py skills\budget_manager tests`: passed.
+- `python3.14 -m unittest tests.test_meta_data_provider`: passed.
 - `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
 - `git diff --check`: passed.
 - Real `python main.py --budget-manager-preview` was not run by Codex for this fix because it sends a Feishu preview; next validation should be run by the user in Windows CMD.

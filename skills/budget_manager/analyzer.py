@@ -3,44 +3,21 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from config import ACCOUNT_CONFIGS, META_ACCESS_TOKEN
 from feishu import FeishuWebhookClient
 from meta_api import MetaAPIError, MetaMarketingAPI
+from meta_data_provider import EntityInfo, InsightRecord, MetaDataProvider, decimal_or_zero
 from skills.budget_manager import audit
 from skills.budget_manager import rules
 
 
 logger = logging.getLogger(__name__)
-
-ZERO_DECIMAL = Decimal("0")
-INSIGHT_FIELDS = "spend,actions,action_values,impressions,inline_link_clicks,clicks"
-ACTION_TYPES = {
-    "purchase": ("purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "onsite_conversion.purchase"),
-    "purchase_value": ("purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase", "onsite_conversion.purchase"),
-    "add_to_cart": ("add_to_cart", "offsite_conversion.fb_pixel_add_to_cart", "omni_add_to_cart"),
-    "checkout": ("initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "omni_initiated_checkout"),
-    "link_click": ("link_click",),
-}
-
-
-@dataclass(frozen=True)
-class AccountContext:
-    currency: str
-    timezone_name: str
-    account_today: date
-
-
-@dataclass(frozen=True)
-class MetricsResult:
-    metrics: rules.MetricWindow
-    request: dict[str, Any]
-    raw_summary: dict[str, Any]
+ZERO = Decimal("0")
 
 
 @dataclass
@@ -103,6 +80,7 @@ def preview() -> dict[str, Any]:
     print("Loading configuration...")
     config = rules.load_config()
     api = MetaMarketingAPI(META_ACCESS_TOKEN)
+    provider = MetaDataProvider(api)
     run_id = "budget_" + datetime.now().strftime("%Y%m%d_%H%M%S")
     start_time = datetime.now().isoformat(timespec="seconds")
     recommendations: list[BudgetRecommendation] = []
@@ -112,7 +90,7 @@ def preview() -> dict[str, Any]:
     performance_accounts = [account for account in ACCOUNT_CONFIGS if account.account_type == config["performance_account_type"]]
     for index, account in enumerate(performance_accounts, start=1):
         print(f"Processing Account {index}/{len(performance_accounts)}...")
-        recs = analyze_account(api, account, config, run_id)
+        recs = analyze_account(provider, account, config, run_id)
         recommendations.extend(recs)
         for rec in recs:
             audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "SCAN_RESULT", **asdict(rec)})
@@ -145,51 +123,26 @@ def preview() -> dict[str, Any]:
     return snapshot
 
 
-def analyze_account(api: MetaMarketingAPI, account: Any, config: dict[str, Any], run_id: str | None = None) -> list[BudgetRecommendation]:
+def analyze_account(provider: MetaDataProvider, account: Any, config: dict[str, Any], run_id: str | None = None) -> list[BudgetRecommendation]:
     try:
-        context = get_account_context(api, account)
-        ranges = rules.date_ranges(context.account_today)
-        account_3d = get_metrics(api, account.api_id, "account", time_range=ranges["last_3_complete_days"], account_id=account.account_id, account_timezone=context.timezone_name)
-        account_today = get_metrics(api, account.api_id, "account", date_preset="today", account_id=account.account_id, account_timezone=context.timezone_name, expected_range=ranges["today"])
-        account_30d = get_metrics(api, account.api_id, "account", time_range=ranges["last_30_complete_days"], account_id=account.account_id, account_timezone=context.timezone_name)
-        account_funnel, _ = rules.detect_funnel_anomaly(account_today.metrics, account_30d.metrics, config)
-        account_regime, regime_reason = rules.determine_account_regime(account_3d.metrics, account_today.metrics, account_funnel, config)
-        regime_inputs = regime_debug(account_3d.metrics, account_today.metrics, regime_reason)
+        meta = provider.get_account_meta(account)
+        account_3d = provider.get_insights(account, "account", "last_3_complete_days", meta=meta)[0]
+        account_today = provider.get_insights(account, "account", "today", meta=meta)[0]
+        account_30d = provider.get_insights(account, "account", "last_30_complete_days", meta=meta)[0]
+        account_3d_window = metric_window(account_3d)
+        account_today_window = metric_window(account_today)
+        account_30d_window = metric_window(account_30d)
+
+        account_funnel, _ = rules.detect_funnel_anomaly(account_today_window, account_30d_window, config)
+        account_regime, regime_reason = account_regime_from_records(account_3d, account_today, account_3d_window, account_today_window, account_funnel, config)
+        regime_inputs = regime_debug(account_3d, account_today, account_regime, regime_reason)
         print_regime_debug(account.account_id, regime_inputs)
         if run_id:
-            audit.append_log(
-                config,
-                {
-                    "run_id": run_id,
-                    "mode": "preview",
-                    "event": "ACCOUNT_TODAY_INSIGHTS",
-                    "account_id": account.account_id,
-                    "account_timezone": context.timezone_name,
-                    "today_request": account_today.request,
-                    "raw_insights_has_data": account_today.raw_summary["has_data"],
-                    "raw_today_spend": account_today.raw_summary["spend"],
-                    "raw_today_actions": account_today.raw_summary["actions"],
-                    "raw_today_action_values": account_today.raw_summary["action_values"],
-                    "parsed_purchase": fmt_decimal(account_today.metrics.purchase),
-                    "parsed_atc": fmt_decimal(account_today.metrics.atc),
-                    "parsed_checkout": fmt_decimal(account_today.metrics.checkout),
-                },
-            )
-            audit.append_log(
-                config,
-                {
-                    "run_id": run_id,
-                    "mode": "preview",
-                    "event": "ACCOUNT_REGIME",
-                    "account_id": account.account_id,
-                    "account_timezone": context.timezone_name,
-                    **regime_inputs,
-                },
-            )
+            audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "ACCOUNT_REGIME", **regime_inputs})
         print("Scanning Campaigns...")
-        campaigns = get_campaigns(api, account)
+        campaigns = [item for item in provider.get_campaigns(account, meta=meta) if item.effective_status == "ACTIVE"]
         print("Scanning Ad Sets...")
-        adsets = get_adsets(api, account)
+        adsets = [item for item in provider.get_adsets(account, meta=meta) if item.effective_status == "ACTIVE"]
     except Exception as exc:
         clean_error = sanitize_error(exc)
         logger.error("Budget Manager account scan failed | account_id=%s | error=%s", account.account_id, clean_error)
@@ -198,106 +151,75 @@ def analyze_account(api: MetaMarketingAPI, account: Any, config: dict[str, Any],
     recs: list[BudgetRecommendation] = []
     print("Evaluating rules...")
     for campaign in campaigns:
-        campaign_budget = parse_budget(campaign.get("daily_budget"), context.currency)
-        has_campaign_budget = campaign_budget is not None or campaign.get("lifetime_budget")
+        has_campaign_budget = campaign.daily_budget is not None or campaign.lifetime_budget is not None
         if has_campaign_budget:
-            recs.append(
-                analyze_entity(
-                    api,
-                    account,
-                    campaign,
-                    None,
-                    "Campaign",
-                    "CBO",
-                    context,
-                    ranges,
-                    account_regime,
-                    regime_reason,
-                    account_3d.metrics,
-                    account_today,
-                    regime_inputs,
-                    config,
-                )
-            )
+            recs.append(analyze_entity(provider, account, campaign, None, "Campaign", "CBO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config))
             continue
-        for adset in [row for row in adsets if row.get("campaign_id") == campaign.get("id") and row.get("daily_budget")]:
-            recs.append(
-                analyze_entity(
-                    api,
-                    account,
-                    campaign,
-                    adset,
-                    "Ad Set",
-                    "ABO",
-                    context,
-                    ranges,
-                    account_regime,
-                    regime_reason,
-                    account_3d.metrics,
-                    account_today,
-                    regime_inputs,
-                    config,
-                )
-            )
+        campaign_adsets = [row for row in adsets if row.campaign_id == campaign.entity_id and row.daily_budget is not None]
+        for adset in campaign_adsets:
+            recs.append(analyze_entity(provider, account, campaign, adset, "Ad Set", "ABO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config))
     if not recs:
         recs.append(data_error_recommendation(account, f"Cannot identify actual budget level. Account regime: {account_regime}. {regime_reason}"))
     return recs
 
 
 def analyze_entity(
-    api: MetaMarketingAPI,
+    provider: MetaDataProvider,
     account: Any,
-    campaign: dict[str, Any],
-    adset: dict[str, Any] | None,
+    campaign: EntityInfo,
+    adset: EntityInfo | None,
     entity_level: str,
     budget_model: str,
-    context: AccountContext,
-    ranges: dict[str, dict[str, str]],
     account_regime: str,
     account_regime_reason: str,
     account_3d: rules.MetricWindow,
-    account_today: MetricsResult,
+    account_today: InsightRecord,
     regime_inputs: dict[str, Any],
     config: dict[str, Any],
 ) -> BudgetRecommendation:
-    entity_id = str(adset.get("id") if adset else campaign.get("id"))
-    level = "adset" if adset else "campaign"
-    current_budget = parse_budget((adset or campaign).get("daily_budget"), context.currency)
-    learning_status = extract_learning_status(adset)
-    delivery_status = str((adset or campaign).get("effective_status") or "UNKNOWN")
-    last_3d = get_metrics(api, entity_id, level, time_range=ranges["last_3_complete_days"], account_id=account.account_id, account_timezone=context.timezone_name)
-    today = get_metrics(api, entity_id, level, date_preset="today", account_id=account.account_id, account_timezone=context.timezone_name, expected_range=ranges["today"])
-    avg_30d = get_metrics(api, entity_id, level, time_range=ranges["last_30_complete_days"], account_id=account.account_id, account_timezone=context.timezone_name)
-    rtg = rules.is_rtg(str(campaign.get("name") or ""), config)
-    confidence = "HIGH" if rules.has_last_3d_sample(last_3d.metrics, config) and rules.has_today_sample(today.metrics, config) else "LOW"
-    decision = rules.evaluate_entity(entity_level, budget_model, rtg, account_regime, last_3d.metrics, today.metrics, avg_30d.metrics, current_budget, learning_status, config)
+    entity = adset or campaign
+    provider_level = "adset" if adset else "campaign"
+    last_3d_record = provider.get_insights(account, provider_level, "last_3_complete_days", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
+    today_record = provider.get_insights(account, provider_level, "today", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
+    avg_30d_record = provider.get_insights(account, provider_level, "last_30_complete_days", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
+    last_3d = metric_window(last_3d_record)
+    today = metric_window(today_record)
+    avg_30d = metric_window(avg_30d_record)
+    rtg = rules.is_rtg(campaign.entity_name, config)
+    confidence = "HIGH" if last_3d_record.data_status == "SUCCESS" and today_record.data_status == "SUCCESS" and rules.has_last_3d_sample(last_3d, config) and rules.has_today_sample(today, config) else "LOW"
+    if last_3d_record.data_status == "ERROR" or today_record.data_status == "ERROR" or avg_30d_record.data_status == "ERROR":
+        decision = rules.decision("DATA_ERROR", entity.daily_budget, config, "Meta Data Provider returned ERROR; budget changes are blocked.", False, "")
+    elif last_3d_record.data_status != "SUCCESS" or today_record.data_status != "SUCCESS":
+        decision = rules.decision("DATA_INSUFFICIENT", entity.daily_budget, config, "Meta Data Provider returned EMPTY data; budget changes are blocked.", False, "")
+    else:
+        decision = rules.evaluate_entity(entity_level, budget_model, rtg, account_regime, last_3d, today, avg_30d, entity.daily_budget, entity.learning_status, config)
     return BudgetRecommendation(
         account_name=account.name,
         account_id=account.account_id,
         account_regime=account_regime,
         account_3d_roas=fmt_optional(account_3d.roas),
-        account_today_roas=fmt_optional(account_today.metrics.roas),
+        account_today_roas=fmt_optional(metric_window(account_today).roas),
         entity_level=entity_level,
-        campaign_name=str(campaign.get("name") or ""),
-        campaign_id=str(campaign.get("id") or ""),
-        adset_name=str(adset.get("name")) if adset else None,
-        adset_id=str(adset.get("id")) if adset else None,
+        campaign_name=campaign.entity_name,
+        campaign_id=campaign.entity_id,
+        adset_name=adset.entity_name if adset else None,
+        adset_id=adset.entity_id if adset else None,
         budget_model=budget_model,
         rtg="Yes" if rtg else "No",
-        delivery_status=delivery_status,
-        learning_status=learning_status,
-        current_budget=fmt_optional(current_budget),
-        currency=context.currency,
-        last_3d_spend=fmt_decimal(last_3d.metrics.spend),
-        last_3d_purchase=fmt_decimal(last_3d.metrics.purchase),
-        last_3d_purchase_value=fmt_decimal(last_3d.metrics.purchase_value),
-        last_3d_roas=fmt_optional(last_3d.metrics.roas),
-        today_spend=fmt_decimal(today.metrics.spend),
-        today_purchase=fmt_decimal(today.metrics.purchase),
-        today_purchase_value=fmt_decimal(today.metrics.purchase_value),
-        today_roas=fmt_optional(today.metrics.roas),
-        atc_rate=fmt_optional_percent(today.metrics.atc_rate),
-        checkout_rate=fmt_optional_percent(today.metrics.checkout_rate),
+        delivery_status=entity.effective_status,
+        learning_status=entity.learning_status,
+        current_budget=fmt_optional(entity.daily_budget),
+        currency=entity.currency,
+        last_3d_spend=fmt_decimal(last_3d.spend),
+        last_3d_purchase=fmt_decimal(last_3d.purchase),
+        last_3d_purchase_value=fmt_decimal(last_3d.purchase_value),
+        last_3d_roas=fmt_optional(last_3d.roas),
+        today_spend=fmt_decimal(today.spend),
+        today_purchase=fmt_decimal(today.purchase),
+        today_purchase_value=fmt_decimal(today.purchase_value),
+        today_roas=fmt_optional(today.roas),
+        atc_rate=fmt_optional_percent(today.atc_rate),
+        checkout_rate=fmt_optional_percent(today.checkout_rate),
         funnel_anomaly=decision["funnel_anomaly"],
         data_confidence=confidence,
         proposed_action=decision["proposed_action"],
@@ -308,207 +230,51 @@ def analyze_entity(
         account_regime_reason=account_regime_reason,
         matched_rule=f"{budget_model}_{'RTG' if rtg else 'NON_RTG'}_{entity_level}",
         cooldown_status="CLEAR",
-        api_result="SUCCESS",
-        account_timezone=context.timezone_name,
-        today_request_since=str(today.request.get("since") or ""),
-        today_request_until=str(today.request.get("until") or ""),
-        today_date_preset=str(today.request.get("date_preset") or ""),
-        today_raw_has_data="Yes" if today.raw_summary["has_data"] else "No",
-        today_raw_spend=str(today.raw_summary["spend"]),
-        today_raw_actions=today.raw_summary["actions"],
-        today_raw_action_values=today.raw_summary["action_values"],
-        today_raw_data=today.raw_summary["data"],
-        parsed_today_purchase=fmt_decimal(today.metrics.purchase),
-        parsed_today_atc=fmt_decimal(today.metrics.atc),
-        parsed_today_checkout=fmt_decimal(today.metrics.checkout),
-        parsed_today_link_clicks=fmt_decimal(today.metrics.clicks),
+        api_result=today_record.data_status,
+        account_timezone=today_record.timezone,
+        today_request_since=today_record.since,
+        today_request_until=today_record.until,
+        today_date_preset=today_record.date_preset or "",
+        today_raw_has_data="Yes" if today_record.data_status == "SUCCESS" else "No",
+        today_raw_spend=str(today_record.raw_spend or "N/A"),
+        today_raw_actions=[{"action_type": item} for item in today_record.raw_action_types],
+        today_raw_action_values=[{"action_type": item} for item in today_record.raw_action_value_types],
+        today_raw_data=list(today_record.raw_rows_sample),
+        parsed_today_purchase=fmt_decimal(today.purchase),
+        parsed_today_atc=fmt_decimal(today.atc),
+        parsed_today_checkout=fmt_decimal(today.checkout),
+        parsed_today_link_clicks=fmt_decimal(today.clicks),
         regime_calculation_inputs=regime_inputs,
     )
 
 
-def get_account_context(api: MetaMarketingAPI, account: Any) -> AccountContext:
-    payload = api._request(
-        "GET",
-        f"{api.base_url}/{account.api_id}",
-        params={"fields": "currency,timezone_name,timezone_offset_hours_utc", "access_token": api.access_token},
+def metric_window(record: InsightRecord) -> rules.MetricWindow:
+    return rules.MetricWindow(
+        spend=decimal_or_zero(record.spend),
+        purchase=decimal_or_zero(record.purchase),
+        purchase_value=decimal_or_zero(record.purchase_value),
+        atc=decimal_or_zero(record.add_to_cart),
+        checkout=decimal_or_zero(record.checkout),
+        clicks=decimal_or_zero(record.link_clicks),
+        impressions=decimal_or_zero(record.impressions),
     )
-    currency = payload.get("currency")
-    if not currency:
-        raise RuntimeError("Currency is unavailable.")
-    timezone_name = str(payload.get("timezone_name") or "UTC")
-    return AccountContext(currency=str(currency), timezone_name=timezone_name, account_today=account_today(timezone_name))
 
 
-def account_today(timezone_name: str) -> date:
-    try:
-        return datetime.now(ZoneInfo(timezone_name)).date()
-    except ZoneInfoNotFoundError:
-        return datetime.utcnow().date()
-
-
-def get_campaigns(api: MetaMarketingAPI, account: Any) -> list[dict[str, Any]]:
-    payload = api._request(
-        "GET",
-        f"{api.base_url}/{account.api_id}/campaigns",
-        params={"fields": "id,name,effective_status,daily_budget,lifetime_budget", "limit": 200, "access_token": api.access_token},
-    )
-    return [row for row in payload.get("data", []) if row.get("effective_status") == "ACTIVE"]
-
-
-def get_adsets(api: MetaMarketingAPI, account: Any) -> list[dict[str, Any]]:
-    payload = api._request(
-        "GET",
-        f"{api.base_url}/{account.api_id}/adsets",
-        params={"fields": "id,name,campaign_id,effective_status,daily_budget,lifetime_budget,learning_stage_info", "limit": 500, "access_token": api.access_token},
-    )
-    return [row for row in payload.get("data", []) if row.get("effective_status") == "ACTIVE"]
-
-
-def get_metrics(
-    api: MetaMarketingAPI,
-    object_id: str,
-    level: str,
-    *,
-    account_id: str,
-    account_timezone: str,
-    time_range: dict[str, str] | None = None,
-    date_preset: str | None = None,
-    expected_range: dict[str, str] | None = None,
-) -> MetricsResult:
-    params: dict[str, Any] = {
-        "fields": INSIGHT_FIELDS,
-        "level": level,
-        "access_token": api.access_token,
-    }
-    request_debug: dict[str, Any] = {
-        "account_id": account_id,
-        "object_id": object_id,
-        "level": level,
-        "account_timezone": account_timezone,
-        "date_preset": date_preset or "",
-        "since": (expected_range or time_range or {}).get("since", ""),
-        "until": (expected_range or time_range or {}).get("until", ""),
-    }
-    if date_preset:
-        params["date_preset"] = date_preset
-    elif time_range:
-        params["time_range"] = json.dumps(time_range)
-    else:
-        raise ValueError("Either time_range or date_preset is required.")
-
-    try:
-        payload = api._request("GET", f"{api.base_url}/{object_id}/insights", params=params)
-    except MetaAPIError as exc:
-        logger.error(
-            "Budget Manager insights failed | account_id=%s | object_id=%s | status=%s | meta_code=%s | message=%s",
-            account_id,
-            object_id,
-            exc.http_status_code or "unavailable",
-            exc.meta_error_code or "unavailable",
-            exc,
-        )
-        raise
-    rows = list(payload.get("data", []))
-    metrics = rows_to_metrics(rows)
-    raw_summary = summarize_raw_rows(rows)
-    logger.info(
-        "Budget Manager insights debug | account_id=%s | object_id=%s | timezone=%s | date_preset=%s | since=%s | until=%s | has_data=%s | raw_spend=%s | parsed_purchase=%s | parsed_atc=%s | parsed_checkout=%s",
-        account_id,
-        object_id,
-        account_timezone,
-        request_debug["date_preset"],
-        request_debug["since"],
-        request_debug["until"],
-        raw_summary["has_data"],
-        raw_summary["spend"],
-        metrics.purchase,
-        metrics.atc,
-        metrics.checkout,
-    )
-    print(
-        f"Insights debug | account_id={account_id} | timezone={account_timezone} | "
-        f"date_preset={request_debug['date_preset'] or 'N/A'} | since={request_debug['since']} | until={request_debug['until']} | "
-        f"raw spend={raw_summary['spend']} | raw actions={raw_summary['actions']} | raw action_values={raw_summary['action_values']} | "
-        f"parsed purchase={metrics.purchase} | parsed ATC={metrics.atc} | parsed checkout={metrics.checkout}"
-    )
-    return MetricsResult(metrics=metrics, request=request_debug, raw_summary=raw_summary)
-
-
-def rows_to_metrics(rows: list[dict[str, Any]]) -> rules.MetricWindow:
-    spend = ZERO_DECIMAL
-    purchase = ZERO_DECIMAL
-    purchase_value = ZERO_DECIMAL
-    atc = ZERO_DECIMAL
-    checkout = ZERO_DECIMAL
-    link_clicks = ZERO_DECIMAL
-    impressions = ZERO_DECIMAL
-    for row in rows:
-        spend += Decimal(str(row.get("spend") or "0"))
-        impressions += Decimal(str(row.get("impressions") or "0"))
-        row_link_clicks = action_value(row.get("actions", []), ACTION_TYPES["link_click"])
-        if row_link_clicks == 0 and row.get("inline_link_clicks") not in (None, ""):
-            row_link_clicks = Decimal(str(row.get("inline_link_clicks") or "0"))
-        link_clicks += row_link_clicks
-        purchase += action_value(row.get("actions", []), ACTION_TYPES["purchase"])
-        purchase_value += action_value(row.get("action_values", []), ACTION_TYPES["purchase_value"])
-        atc += action_value(row.get("actions", []), ACTION_TYPES["add_to_cart"])
-        checkout += action_value(row.get("actions", []), ACTION_TYPES["checkout"])
-    return rules.MetricWindow(spend, purchase, purchase_value, atc, checkout, link_clicks, impressions)
-
-
-def summarize_raw_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "has_data": bool(rows),
-        "spend": str(sum((Decimal(str(row.get("spend") or "0")) for row in rows), ZERO_DECIMAL)),
-        "actions": compact_action_rows(rows, "actions"),
-        "action_values": compact_action_rows(rows, "action_values"),
-        "data": rows[:3],
-    }
-
-
-def compact_action_rows(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
-    compacted: list[dict[str, Any]] = []
-    interesting = set(ACTION_TYPES["purchase"] + ACTION_TYPES["add_to_cart"] + ACTION_TYPES["checkout"] + ACTION_TYPES["link_click"])
-    for row in rows:
-        for action in row.get(field, []) or []:
-            action_type = str(action.get("action_type") or "")
-            if action_type in interesting:
-                compacted.append({"action_type": action_type, "value": str(action.get("value") or "0")})
-    return compacted
-
-
-def action_value(actions: list[dict[str, Any]], action_types: tuple[str, ...]) -> Decimal:
-    by_type: dict[str, Decimal] = {}
-    for row in actions or []:
-        action_type = str(row.get("action_type") or "")
-        if action_type and action_type not in by_type:
-            by_type[action_type] = Decimal(str(row.get("value") or "0"))
-    for action_type in action_types:
-        if action_type in by_type:
-            return by_type[action_type]
-    return ZERO_DECIMAL
-
-
-def parse_budget(raw_budget: Any, currency: str) -> Decimal | None:
-    if raw_budget in (None, "", "0", 0):
-        return None
-    raw = Decimal(str(raw_budget))
-    if currency.upper() in {"BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"}:
-        return raw
-    return (raw / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def extract_learning_status(adset: dict[str, Any] | None) -> str:
-    if not adset:
-        return "N/A"
-    info = adset.get("learning_stage_info") or {}
-    if not isinstance(info, dict):
-        return "N/A"
-    raw_status = str(info.get("status") or info.get("phase") or info.get("learning_stage") or "").strip()
-    normalized = raw_status.replace("_", " ").upper()
-    if normalized in {"LEARNING", "LEARNING LIMITED"}:
-        return normalized.title()
-    return "N/A"
+def account_regime_from_records(
+    account_3d: InsightRecord,
+    account_today: InsightRecord,
+    account_3d_window: rules.MetricWindow,
+    account_today_window: rules.MetricWindow,
+    funnel_anomaly: bool,
+    config: dict[str, Any],
+) -> tuple[str, str]:
+    if account_3d.data_status != "SUCCESS":
+        return "DATA_INSUFFICIENT", f"Account 3D data_status is {account_3d.data_status}; account regime cannot be classified."
+    if account_3d.spend is None or account_3d.purchase_value is None or account_3d.roas is None:
+        return "DATA_INSUFFICIENT", "Account 3D spend, purchase value, or ROAS is unavailable; account regime cannot be classified."
+    if account_today.data_status == "ERROR":
+        return "DATA_INSUFFICIENT", "Account today data_status is ERROR; account regime cannot use today."
+    return rules.determine_account_regime(account_3d_window, account_today_window, funnel_anomaly, config)
 
 
 def data_error_recommendation(account: Any, error: str) -> BudgetRecommendation:
@@ -553,16 +319,23 @@ def data_error_recommendation(account: Any, error: str) -> BudgetRecommendation:
     )
 
 
-def regime_debug(last_3d: rules.MetricWindow, today: rules.MetricWindow, reason: str) -> dict[str, Any]:
+def regime_debug(account_3d: InsightRecord, account_today: InsightRecord, regime: str, reason: str) -> dict[str, Any]:
     return {
-        "account_3d_spend": fmt_decimal(last_3d.spend),
-        "account_3d_purchase": fmt_decimal(last_3d.purchase),
-        "account_3d_purchase_value": fmt_decimal(last_3d.purchase_value),
-        "account_3d_roas": fmt_optional(last_3d.roas),
-        "account_today_spend": fmt_decimal(today.spend),
-        "account_today_purchase": fmt_decimal(today.purchase),
-        "account_today_purchase_value": fmt_decimal(today.purchase_value),
-        "account_today_roas": fmt_optional(today.roas),
+        "account_id": account_3d.account_id,
+        "account_name": account_3d.account_name,
+        "account_timezone": account_3d.timezone,
+        "account_timezone_offset_hours_utc": account_3d.timezone_offset_hours_utc,
+        "account_3d_data_status": account_3d.data_status,
+        "account_3d_spend": fmt_record_decimal(account_3d.spend),
+        "account_3d_purchase": fmt_record_decimal(account_3d.purchase),
+        "account_3d_purchase_value": fmt_record_decimal(account_3d.purchase_value),
+        "account_3d_roas": fmt_optional(account_3d.roas),
+        "account_today_data_status": account_today.data_status,
+        "account_today_spend": fmt_record_decimal(account_today.spend),
+        "account_today_purchase": fmt_record_decimal(account_today.purchase),
+        "account_today_purchase_value": fmt_record_decimal(account_today.purchase_value),
+        "account_today_roas": fmt_optional(account_today.roas),
+        "regime_result": regime,
         "regime_reason": reason,
     }
 
@@ -576,13 +349,20 @@ def print_regime_debug(account_id: str, inputs: dict[str, Any]) -> None:
         f"3D Purchase Value={inputs['account_3d_purchase_value']} | "
         f"3D ROAS={inputs['account_3d_roas']} | "
         f"Today Spend={inputs['account_today_spend']} | "
+        f"Today Purchase={inputs['account_today_purchase']} | "
+        f"Today Purchase Value={inputs['account_today_purchase_value']} | "
         f"Today ROAS={inputs['account_today_roas']} | "
-        f"Regime reason={inputs['regime_reason']}"
+        f"Regime Result={inputs['regime_result']} | "
+        f"Regime Reason={inputs['regime_reason']}"
     )
 
 
 def fmt_decimal(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def fmt_record_decimal(value: Decimal | None) -> str:
+    return "N/A" if value is None else fmt_decimal(value)
 
 
 def fmt_optional(value: Decimal | None) -> str | None:

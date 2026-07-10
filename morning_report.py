@@ -3,21 +3,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any
 
 from config import ReportAccount
+from meta_data_provider import InsightRecord, MetaDataProvider, decimal_or_zero
 from meta_api import MetaAPIError, MetaMarketingAPI
 from notifier import money
 
 
 logger = logging.getLogger(__name__)
-
-PURCHASE_ACTION_TYPES = (
-    "purchase",
-    "omni_purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "onsite_conversion.purchase",
-)
 
 
 @dataclass(frozen=True)
@@ -85,44 +78,17 @@ def safe_div(numerator: Decimal, denominator: Decimal) -> Decimal:
     return numerator / denominator
 
 
-def as_decimal(value: Any) -> Decimal:
-    return Decimal(str(value or "0"))
-
-
-def required_decimal(row: dict[str, Any], field: str) -> Decimal:
-    if field not in row:
-        raise ValueError(f"Insights row missing required field: {field}")
-    return as_decimal(row.get(field))
-
-
-def extract_action_value(actions: list[dict[str, Any]]) -> Decimal:
-    by_type = {str(row.get("action_type")): as_decimal(row.get("value")) for row in actions}
-    for action_type in PURCHASE_ACTION_TYPES:
-        if action_type in by_type:
-            return by_type[action_type]
-    return Decimal("0")
-
-
-def metric_from_rows(rows: list[dict[str, Any]]) -> Metrics:
-    total = Metrics()
-    for row in rows:
-        total = Metrics(
-            spend=total.spend + required_decimal(row, "spend"),
-            purchase=total.purchase + extract_action_value(row.get("actions", [])),
-            revenue=total.revenue + extract_action_value(row.get("action_values", [])),
-            clicks=total.clicks + required_decimal(row, "clicks"),
-            impressions=total.impressions + required_decimal(row, "impressions"),
-            reach=total.reach + required_decimal(row, "reach"),
-        )
-    return total
-
-
-def campaign_metrics_from_rows(rows: list[dict[str, Any]]) -> list[tuple[str, Metrics]]:
-    campaigns: list[tuple[str, Metrics]] = []
-    for row in rows:
-        name = str(row.get("campaign_name") or row.get("campaign_id") or "Unknown Campaign")
-        campaigns.append((name, metric_from_rows([row])))
-    return campaigns
+def metric_from_record(record: InsightRecord) -> Metrics:
+    if record.data_status == "ERROR":
+        raise RuntimeError(record.error or "Meta Data Provider returned ERROR")
+    return Metrics(
+        spend=decimal_or_zero(record.spend),
+        purchase=decimal_or_zero(record.purchase),
+        revenue=decimal_or_zero(record.purchase_value),
+        clicks=decimal_or_zero(record.clicks),
+        impressions=decimal_or_zero(record.impressions),
+        reach=decimal_or_zero(record.reach),
+    )
 
 
 def combine_metrics(metrics: list[Metrics]) -> Metrics:
@@ -193,38 +159,25 @@ def log_account_failure(account: ReportAccount, exc: Exception) -> None:
     )
 
 
-def log_raw_insights(account: ReportAccount, date_preset: str, rows: list[dict[str, Any]]) -> None:
-    raw = metric_from_rows(rows) if rows else Metrics()
-    logger.info(
-        "Morning Report Meta raw insights | account_id=%s | date_preset=%s | raw spend=%s | raw impressions=%s | raw clicks=%s | raw purchase=%s | raw purchase value=%s",
-        account.account_id,
-        date_preset,
-        raw.spend,
-        raw.impressions,
-        raw.clicks,
-        raw.purchase,
-        raw.revenue,
-    )
-    if date_preset == "today" and raw.spend == 0:
-        logger.warning(
-            "Morning Report today raw spend is 0 for account_id=%s. Check Meta account timezone, permissions, and whether delivery has started today.",
-            account.account_id,
-        )
-
-
 def fetch_account_report(api: MetaMarketingAPI, account: ReportAccount) -> AccountReport:
+    provider = MetaDataProvider(api)
+    meta = provider.get_account_meta(account)
     correct_balance, currency = api.get_spend_limit_balance(account)
-    today_rows = api.get_account_insights(account, "today")
-    log_raw_insights(account, "today", today_rows)
-    today = metric_from_rows(today_rows)
+    today_record = provider.get_insights(account, "account", "today", meta=meta)[0]
+    if today_record.data_status == "ERROR":
+        raise RuntimeError(today_record.error or "Today account insights failed")
+    today = metric_from_record(today_record)
 
-    last_7d_rows = api.get_account_insights(account, "last_7d")
-    log_raw_insights(account, "last_7d", last_7d_rows)
-    last_7d_avg = metric_from_rows(last_7d_rows).daily_average(7)
+    last_7d_record = provider.get_insights(account, "account", "last_7_complete_days", meta=meta)[0]
+    if last_7d_record.data_status == "ERROR":
+        raise RuntimeError(last_7d_record.error or "Last 7 complete days account insights failed")
+    last_7d_avg = metric_from_record(last_7d_record).daily_average(7)
 
-    campaign_rows = api.get_campaign_insights(account, "today")
-    log_raw_insights(account, "today campaign", campaign_rows)
-    campaigns = campaign_metrics_from_rows(campaign_rows)
+    campaign_records = provider.get_insights(account, "campaign", "today", meta=meta)
+    campaign_errors = [record for record in campaign_records if record.data_status == "ERROR"]
+    if campaign_errors:
+        raise RuntimeError(campaign_errors[0].error or "Today campaign insights failed")
+    campaigns = [(record.entity_name, metric_from_record(record)) for record in campaign_records if record.data_status == "SUCCESS"]
     return AccountReport(
         account=account,
         currency=currency,
