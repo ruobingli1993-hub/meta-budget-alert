@@ -9,27 +9,51 @@ from typing import Any
 from config import ACCOUNT_CONFIGS
 from feishu import FeishuWebhookClient
 from meta_api import MetaMarketingAPI
+from skills.budget_manager import audit
 from skills.budget_manager import analyzer, rules
 
 
 def apply(run_id: str) -> int:
+    print("Budget Manager Started")
+    print("Loading configuration...")
     config = rules.load_config()
+    start_time = datetime.now().isoformat(timespec="seconds")
+    target_accounts = [account.account_id for account in ACCOUNT_CONFIGS if account.account_type == config["performance_account_type"]]
+    audit.append_log(config, {**audit.run_base(run_id, "apply", start_time, config, target_accounts), "event": "START"})
+    status = "FAILED"
+    report_rows: list[dict[str, Any]] = []
+    errors: list[str] = []
     snapshot = load_preview(run_id, config)
     executable = [row for row in snapshot["recommendations"] if row["proposed_action"] not in rules.NO_WRITE_ACTIONS and row["proposed_new_budget"]]
     if not executable:
         print("No executable budget changes in preview.")
+        status = "SUCCESS"
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "apply", start_time, end_time, status, snapshot["recommendations"], [])
+        audit.append_log(config, {"run_id": run_id, "mode": "apply", "event": "END", "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
         return 0
 
     api = MetaMarketingAPI()
+    print("Re-reading latest Meta data...")
     validate_preview_still_current(api, executable, config)
     print(analyzer.format_preview({"run_id": run_id, "recommendations": executable}))
     if input("Type APPLY to execute: ").strip() != "APPLY":
         print("Apply cancelled.")
+        status = "FAILED"
+        errors.append("Apply confirmation was not exact APPLY.")
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "apply", start_time, end_time, status, snapshot["recommendations"], errors)
+        audit.append_log(config, {"run_id": run_id, "mode": "apply", "event": "CANCELLED", "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
         return 1
 
     backup = create_backup(api, run_id, executable, config)
     results = []
     for row in executable:
+        print(f"Applying change for {row['entity_level']} {row['campaign_id'] or row['adset_id']}...")
         entity_id = row["adset_id"] if row["entity_level"] == "Ad Set" else row["campaign_id"]
         if not entity_id:
             results.append({"row": row, "status": "SKIPPED", "reason": "Missing entity id"})
@@ -40,37 +64,77 @@ def apply(run_id: str) -> int:
         after = read_budget(api, entity_id, row["currency"])
         result = {"row": row, "status": "DONE", "before": before, "target": str(target), "after": after}
         results.append(result)
+        audit.append_log(config, {"run_id": run_id, "mode": "apply", "event": "API_RESULT", "entity_id": entity_id, "before": before, "target": str(target), "after": after})
         append_change_log(run_id, result, config)
 
     message = format_apply_result(run_id, results, backup)
     print(message)
     FeishuWebhookClient().send_text(message)
+    status = "SUCCESS"
+    end_time = datetime.now().isoformat(timespec="seconds")
+    report_path = audit.save_run_report(config, run_id, "apply", start_time, end_time, status, snapshot["recommendations"], errors)
+    audit.append_log(config, {"run_id": run_id, "mode": "apply", "event": "END", "overall_status": status, "run_report": str(report_path)})
+    print(f"Run report saved to: {report_path}")
+    print(f"Overall Status: {status}")
     return 0
 
 
 def rollback(run_id: str) -> int:
+    print("Budget Manager Started")
+    print("Loading configuration...")
     config = rules.load_config()
+    start_time = datetime.now().isoformat(timespec="seconds")
+    target_accounts = [account.account_id for account in ACCOUNT_CONFIGS if account.account_type == config["performance_account_type"]]
+    audit.append_log(config, {**audit.run_base(run_id, "rollback", start_time, config, target_accounts), "event": "START"})
+    status = "FAILED"
+    errors: list[str] = []
     backup_path = Path(config["latest_budget_backup_path"])
     if not backup_path.exists():
         print("No latest budget backup found.")
+        errors.append("No latest budget backup found.")
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "rollback", start_time, end_time, status, [], errors)
+        audit.append_log(config, {"run_id": run_id, "mode": "rollback", "event": "FAILED", "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
         return 1
     backup = json.loads(backup_path.read_text(encoding="utf-8"))
     if backup.get("run_id") != run_id:
         print("Backup RUN_ID does not match requested rollback RUN_ID.")
+        errors.append("Backup RUN_ID does not match requested rollback RUN_ID.")
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "rollback", start_time, end_time, status, [], errors)
+        audit.append_log(config, {"run_id": run_id, "mode": "rollback", "event": "FAILED", "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
         return 1
     if input("Type ROLLBACK to execute: ").strip() != "ROLLBACK":
         print("Rollback cancelled.")
+        errors.append("Rollback confirmation was not exact ROLLBACK.")
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "rollback", start_time, end_time, status, [], errors)
+        audit.append_log(config, {"run_id": run_id, "mode": "rollback", "event": "CANCELLED", "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
         return 1
 
     api = MetaMarketingAPI()
     results = []
     for row in backup["budgets"]:
+        print(f"Rolling back entity {row['entity_id']}...")
         write_budget(api, row["entity_id"], row["currency"], Decimal(str(row["budget"])))
         final = read_budget(api, row["entity_id"], row["currency"])
         results.append({"entity_id": row["entity_id"], "target": row["budget"], "final": final})
+        audit.append_log(config, {"run_id": run_id, "mode": "rollback", "event": "API_RESULT", "entity_id": row["entity_id"], "target": row["budget"], "final": final})
     message = "Budget rollback completed\nRUN_ID: " + run_id + "\n" + json.dumps(results, ensure_ascii=False, indent=2)
     print(message)
     FeishuWebhookClient().send_text(message)
+    status = "SUCCESS"
+    end_time = datetime.now().isoformat(timespec="seconds")
+    report_path = audit.save_run_report(config, run_id, "rollback", start_time, end_time, status, [], errors)
+    audit.append_log(config, {"run_id": run_id, "mode": "rollback", "event": "END", "overall_status": status, "run_report": str(report_path)})
+    print(f"Run report saved to: {report_path}")
+    print(f"Overall Status: {status}")
     return 0
 
 

@@ -11,6 +11,7 @@ from typing import Any
 from config import ACCOUNT_CONFIGS, META_ACCESS_TOKEN
 from feishu import FeishuWebhookClient
 from meta_api import MetaAPIError, MetaMarketingAPI
+from skills.budget_manager import audit
 from skills.budget_manager import rules
 
 
@@ -59,18 +60,32 @@ class BudgetRecommendation:
     adjustment_percentage: str
     reason: str
     optimization_hint: str
+    account_regime_reason: str = ""
+    matched_rule: str = ""
+    cooldown_status: str = "CLEAR"
+    api_result: str = "SUCCESS"
 
 
 def preview() -> dict[str, Any]:
+    print("Budget Manager Started")
+    print("Loading configuration...")
     config = rules.load_config()
     api = MetaMarketingAPI(META_ACCESS_TOKEN)
     run_id = "budget_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+    start_time = datetime.now().isoformat(timespec="seconds")
     recommendations: list[BudgetRecommendation] = []
+    target_accounts = [account.account_id for account in ACCOUNT_CONFIGS if account.account_type == config["performance_account_type"]]
+    audit.append_log(config, {**audit.run_base(run_id, "preview", start_time, config, target_accounts), "event": "START"})
 
-    for account in ACCOUNT_CONFIGS:
+    performance_accounts = [account for account in ACCOUNT_CONFIGS if account.account_type == config["performance_account_type"]]
+    for index, account in enumerate(performance_accounts, start=1):
         if account.account_type != config["performance_account_type"]:
             continue
-        recommendations.extend(analyze_account(api, account, config))
+        print(f"Processing Account {index}/{len(performance_accounts)}...")
+        recs = analyze_account(api, account, config)
+        recommendations.extend(recs)
+        for rec in recs:
+            audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "SCAN_RESULT", **asdict(rec)})
 
     snapshot = {
         "run_id": run_id,
@@ -78,9 +93,25 @@ def preview() -> dict[str, Any]:
         "recommendations": [asdict(item) for item in recommendations],
     }
     save_preview(snapshot, config)
+    print("Preview generated...")
     message = format_preview(snapshot)
     print(message)
-    FeishuWebhookClient().send_text(message)
+    errors: list[str] = []
+    status = audit.overall_status(snapshot["recommendations"])
+    try:
+        FeishuWebhookClient().send_text(message)
+        print("Feishu preview sent...")
+    except Exception as exc:
+        status = "FAILED"
+        errors.append(type(exc).__name__)
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_ERROR", "error": type(exc).__name__})
+        raise
+    finally:
+        end_time = datetime.now().isoformat(timespec="seconds")
+        report_path = audit.save_run_report(config, run_id, "preview", start_time, end_time, status, snapshot["recommendations"], errors)
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "END", "end_time": end_time, "overall_status": status, "run_report": str(report_path)})
+        print(f"Run report saved to: {report_path}")
+        print(f"Overall Status: {status}")
     return snapshot
 
 
@@ -92,21 +123,24 @@ def analyze_account(api: MetaMarketingAPI, account: Any, config: dict[str, Any])
         account_30d = get_metrics(api, account.api_id, "account", rules.date_ranges()["last_30_complete_days"])
         account_funnel, _ = rules.detect_funnel_anomaly(account_today, account_30d, config)
         account_regime, regime_reason = rules.determine_account_regime(account_3d, account_today, account_funnel, config)
+        print("Scanning Campaigns...")
         campaigns = get_campaigns(api, account)
+        print("Scanning Ad Sets...")
         adsets = get_adsets(api, account)
     except Exception as exc:
         logger.error("Budget Manager account scan failed | account_id=%s | error=%s", account.account_id, sanitize_error(exc))
         return [data_error_recommendation(account, sanitize_error(exc))]
 
     recs: list[BudgetRecommendation] = []
+    print("Evaluating rules...")
     for campaign in campaigns:
         campaign_budget = parse_budget(campaign.get("daily_budget"), currency)
         has_campaign_budget = campaign_budget is not None or campaign.get("lifetime_budget")
         if has_campaign_budget:
-            recs.append(analyze_entity(api, account, campaign, None, "Campaign", "CBO", currency, account_regime, account_3d, account_today, config))
+            recs.append(analyze_entity(api, account, campaign, None, "Campaign", "CBO", currency, account_regime, regime_reason, account_3d, account_today, config))
             continue
         for adset in [row for row in adsets if row.get("campaign_id") == campaign.get("id") and row.get("daily_budget")]:
-            recs.append(analyze_entity(api, account, campaign, adset, "Ad Set", "ABO", currency, account_regime, account_3d, account_today, config))
+            recs.append(analyze_entity(api, account, campaign, adset, "Ad Set", "ABO", currency, account_regime, regime_reason, account_3d, account_today, config))
     if not recs:
         recs.append(data_error_recommendation(account, f"无法识别实际预算层级。Account regime: {account_regime}. {regime_reason}"))
     return recs
@@ -121,6 +155,7 @@ def analyze_entity(
     budget_model: str,
     currency: str,
     account_regime: str,
+    account_regime_reason: str,
     account_3d: rules.MetricWindow,
     account_today: rules.MetricWindow,
     config: dict[str, Any],
@@ -171,6 +206,10 @@ def analyze_entity(
         adjustment_percentage=decision["adjustment_percentage"],
         reason=decision["reason"],
         optimization_hint=decision["optimization_hint"],
+        account_regime_reason=account_regime_reason,
+        matched_rule=f"{budget_model}_{'RTG' if rtg else 'NON_RTG'}_{entity_level}",
+        cooldown_status="CLEAR",
+        api_result="SUCCESS",
     )
 
 
@@ -291,6 +330,10 @@ def data_error_recommendation(account: Any, error: str) -> BudgetRecommendation:
         adjustment_percentage="0",
         reason=error,
         optimization_hint="Meta API 请求失败或关键数据缺失，不允许预算操作。",
+        account_regime_reason=error,
+        matched_rule="DATA_ERROR",
+        cooldown_status="N/A",
+        api_result="FAILED",
     )
 
 
@@ -347,10 +390,13 @@ def format_recommendation(item: dict[str, Any]) -> list[str]:
         f"ATC Rate: {item['atc_rate']}",
         f"Checkout Rate: {item['checkout_rate']}",
         f"Funnel Anomaly: {item['funnel_anomaly']}",
+        f"Cooldown Status: {item.get('cooldown_status')}",
         f"Data Confidence: {item['data_confidence']}",
+        f"Matched Rule: {item.get('matched_rule')}",
         f"Proposed Action: {item['proposed_action']}",
         f"Proposed New Budget: {item['proposed_new_budget']}",
         f"Adjustment Percentage: {item['adjustment_percentage']}",
         f"Reason: {item['reason']}",
+        f"API Result: {item.get('api_result')}",
         f"Optimization Hint: {item['optimization_hint']}",
     ]

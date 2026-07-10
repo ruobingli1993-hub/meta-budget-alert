@@ -1,7 +1,10 @@
 {
+  "rule_version": "budget_manager_v1",
   "target_purchase_roas": 3.0,
   "minimum_daily_budget_usd": 80,
   "preview_log_dir": "logs/budget_previews",
+  "run_report_dir": "logs/budget_runs",
+  "manager_log_path": "logs/budget_manager.log",
   "change_log_path": "logs/budget_changes.jsonl",
   "latest_budget_backup_path": "logs/latest_budget_backup.json",
   "performance_account_type": "performance",

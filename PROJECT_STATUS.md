@@ -47,11 +47,15 @@ After each completed development task, bug fix, or new feature, update this file
 - Added guarded Budget Manager commands: `--budget-manager-preview`, `--budget-manager-apply RUN_ID`, and `--budget-manager-rollback RUN_ID`.
 - Added Budget Manager preview snapshot storage under `logs/budget_previews`.
 - Added Budget Manager audit log path `logs/budget_changes.jsonl`.
+- Added Budget Manager append-only run log at `logs/budget_manager.log`.
+- Added Budget Manager per-run report at `logs/budget_runs/<RUN_ID>.md`.
+- Added Budget Manager CHANGELOG at `skills/budget_manager/CHANGELOG.md`.
+- Added CMD progress output for Budget Manager preview/apply/rollback.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Budget Manager Skill V1 implementation complete.
+- Budget Manager Skill V1 audit/progress logging update complete.
 - No active feature development.
 
 ## Environment
@@ -76,6 +80,7 @@ After each completed development task, bug fix, or new feature, update this file
 
 - Validate the Feishu Morning Report V1 format locally.
 - Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
+- Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
 - Do not run `--budget-manager-apply` until preview is confirmed.
 - After report format validation, push the committed changes to GitHub.
 - Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
@@ -117,6 +122,7 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Budget Manager command wiring compile/help validation: passed.
 - Budget Manager config load validation: passed.
 - GitHub Actions workflow unchanged for Budget Manager work.
+- Budget Manager run-log/report implementation validation: passed.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:
   - Processing account 1/3: QMDT—20240103 / `750289240467952`
   - Processing account 2/3: 销售三部—新主页账户 / `5600626876733411`
