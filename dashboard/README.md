@@ -22,6 +22,13 @@ The dashboard only reads local files:
 
 It does not call Meta API, does not send Feishu messages, and does not execute budget changes.
 
+Home charts include:
+
+- Overall trend chart with Today, 7D same-time average, and 30D same-time average.
+- Performance account comparison for Spend and ROAS.
+- Brand account comparison for Spend, CTR, and CPM.
+- Review status chart for Pending, Approved, Rejected, High Risk, and Data Error.
+
 Approval records are saved to:
 
 ```text

@@ -209,6 +209,13 @@ python main.py --scheduled-report daily-close
 python main.py --scheduled-report early-pulse
 ```
 
+Local time-window testing can use `--as-of`:
+
+```bash
+python main.py --scheduled-report morning --as-of "2026-07-10T18:00:00-07:00"
+python main.py --scheduled-report early-pulse --as-of "2026-07-10T03:00:00-07:00"
+```
+
 Report slots use Beijing time, while Meta data boundaries use each ad account's timezone:
 
 | Mode | Beijing Time | Purpose |
@@ -217,7 +224,9 @@ Report slots use Beijing time, while Meta data boundaries use each ad account's 
 | `daily-close` | 15:30 | Previous complete ad-account day close |
 | `early-pulse` | 18:00 | New ad day early startup pulse |
 
-Feishu only receives a concise summary and a View More line. Configure:
+Feishu only receives a concise summary and a View Dashboard line. It includes status, confidence, spend, Performance ROAS, purchase, CPA, CTR, one line per account, and review counts.
+
+Configure:
 
 ```env
 DASHBOARD_URL=http://localhost:8501

@@ -55,27 +55,27 @@ def build_report_plan(mode: ReportMode, account_timezone: str = "America/Phoenix
         current = PeriodSpec("today_same_time", today.isoformat(), today.isoformat(), "today", True)
         comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
-        return ReportPlan(mode, "🌅 Meta Morning Realtime", "09:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "MEDIUM", "")
+        return ReportPlan(mode, "Meta Morning Realtime", "09:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "MEDIUM", "")
     if mode == "daily-close":
         yesterday = today - timedelta(days=1)
         current = PeriodSpec("yesterday_complete_day", yesterday.isoformat(), yesterday.isoformat())
         comp7 = PeriodSpec("previous_7_complete_day_average", (yesterday - timedelta(days=7)).isoformat(), (yesterday - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("previous_30_complete_day_average", (yesterday - timedelta(days=30)).isoformat(), (yesterday - timedelta(days=1)).isoformat())
-        return ReportPlan(mode, "📊 Meta Daily Close", "15:30 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, False, "HIGH", "")
+        return ReportPlan(mode, "Meta Daily Close", "15:30 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, False, "HIGH", "")
     if mode == "early-pulse":
         current = PeriodSpec("early_pulse_same_time", today.isoformat(), today.isoformat(), "today", True)
         comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
         note = "当前仍处于广告日早期，仅用于监测启动情况，不建议依据当前 ROAS 做强调整。"
-        return ReportPlan(mode, "🌙 Meta Early Pulse", "18:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "LOW", note)
+        return ReportPlan(mode, "Meta Early Pulse", "18:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "LOW", note)
     raise ValueError(f"Unsupported report mode: {mode}")
 
 
-def run_scheduled_report(mode: ReportMode) -> int:
+def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
     validate_config()
     provider = MetaDataProvider(MetaMarketingAPI())
     rows: list[AccountReportRow] = []
-    start = datetime.now(BEIJING_TZ)
+    start = parse_as_of(as_of) if as_of else datetime.now(BEIJING_TZ)
     plan: ReportPlan | None = None
     for account in ACCOUNT_CONFIGS:
         try:
@@ -93,9 +93,10 @@ def run_scheduled_report(mode: ReportMode) -> int:
             rows.append(AccountReportRow(account, None, error, None, None, "DATA_ERROR", "Meta API failed; this account is excluded from health judgment."))
 
     plan = plan or build_report_plan(mode)
-    message = format_report(plan, rows)
     if all(row.current.data_status == "ERROR" for row in rows):
-        message = "⚠ Meta Report Data Fetch Failed\n\n本次数据不可用于判断广告表现。"
+        message = "Meta Report Data Fetch Failed\n\n本次数据不可用于判断广告表现。"
+    else:
+        message = format_report(plan, rows)
     send_result = "SUCCESS"
     try:
         FeishuWebhookClient().send_text(message)
@@ -163,25 +164,26 @@ def judge_account(account: ReportAccount, current: InsightRecord, avg_7d: Insigh
     if current.data_status != "SUCCESS":
         return "DATA_INSUFFICIENT", "该时间段暂无有效投放数据。"
     if account.account_type == "brand":
-        ctr = ratio(current.ctr, avg_7d.ctr if avg_7d else None)
-        freq = ratio(current.frequency, avg_7d.frequency if avg_7d else None)
-        if ctr is not None and ctr < Decimal("0.8"):
-            return "WEAK", "Brand CTR 低于同口径历史，需要观察素材吸引力。"
-        if freq is not None and freq > Decimal("1.3"):
-            return "WEAK", "Brand Frequency 上升，需要观察触达疲劳。"
-        return "HEALTHY", "Brand 指标无明显异常。"
+        if current.reach is None or current.reach == 0 or current.frequency is None:
+            return "DATA_INSUFFICIENT", "Brand Reach / Frequency 样本不足。"
+        ctr_ratio = ratio(current.ctr, avg_7d.ctr if avg_7d else None)
+        freq_ratio = ratio(current.frequency, avg_7d.frequency if avg_7d else None)
+        if ctr_ratio is not None and ctr_ratio < Decimal("0.8"):
+            return "WEAK", "Brand CTR 低于同口径历史。"
+        if freq_ratio is not None and freq_ratio > Decimal("1.3"):
+            return "WEAK", "Brand Frequency 上升。"
+        return "HEALTHY", "Brand 启动正常。"
     if plan.mode == "early-pulse" and decimal_or_zero(current.spend) < Decimal("80") and decimal_or_zero(current.purchase) < Decimal("1"):
         return "DATA_INSUFFICIENT", plan.note
     if current.roas is None:
-        return "DATA_INSUFFICIENT", "Purchase / ROAS 样本不足，暂不做强判断。"
-    base_roas = avg_7d.roas if avg_7d else None
-    roas_ratio = ratio(current.roas, base_roas)
+        return "DATA_INSUFFICIENT", "Purchase / ROAS 样本不足。"
+    roas_ratio = ratio(current.roas, avg_7d.roas if avg_7d else None)
     if roas_ratio is not None and roas_ratio >= Decimal("1.2"):
-        return "BULL", "ROAS 明显高于同口径历史。"
+        return "BULL", "ROAS 高于同口径历史。"
     if roas_ratio is not None and roas_ratio >= Decimal("0.9"):
         return "HEALTHY", "ROAS 接近或高于同口径历史。"
     if roas_ratio is not None and roas_ratio >= Decimal("0.75"):
-        return "WEAK", "ROAS 低于同口径历史，需要观察。"
+        return "WEAK", "ROAS 低于同口径历史。"
     return "BEAR", "ROAS 明显低于同口径历史。"
 
 
@@ -193,59 +195,43 @@ def ratio(value: Decimal | None, base: Decimal | None) -> Decimal | None:
 
 def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
     success = [row for row in rows if row.current.data_status == "SUCCESS"]
-    overall_status = "PARTIAL" if len(success) != len(rows) else overall_health(rows)
+    confidence = data_confidence(plan, rows)
     total_spend = sum((decimal_or_zero(row.current.spend) for row in success), Decimal("0"))
     total_purchase = sum((decimal_or_zero(row.current.purchase) for row in success), Decimal("0"))
-    total_revenue = sum((decimal_or_zero(row.current.purchase_value) for row in success), Decimal("0"))
     perf = [row for row in success if row.account.account_type == "performance"]
     perf_spend = sum((decimal_or_zero(row.current.spend) for row in perf), Decimal("0"))
     perf_purchase = sum((decimal_or_zero(row.current.purchase) for row in perf), Decimal("0"))
-    perf_revenue = sum((decimal_or_zero(row.current.purchase_value) for row in perf), Decimal("0"))
+    perf_revenue = sum_purchase_value(perf)
+    perf_roas = safe_div(perf_revenue, perf_spend)
     impressions = sum((decimal_or_zero(row.current.impressions) for row in success), Decimal("0"))
     clicks = sum((decimal_or_zero(row.current.clicks) for row in success), Decimal("0"))
-    reach = sum((decimal_or_zero(row.current.reach) for row in success), Decimal("0"))
-    review = dashboard_summary(load_preview())
+    overall_status = overall_report_status(rows, confidence, perf_roas)
+    preview = load_preview()
+    review = dashboard_summary(preview)
     dashboard_url = os.getenv("DASHBOARD_URL") or "Dashboard URL not configured"
     lines = [
         plan.title,
         "",
-        f"北京时间：{plan.beijing_time.strftime('%Y-%m-%d %H:%M:%S')}",
-        f"账户当地时间：{plan.account_local_time.strftime('%Y-%m-%d %H:%M:%S %Z')}",
-        f"数据范围：{plan.current_period.since} to {plan.current_period.until} ({'same-time window' if plan.same_time_window else 'complete day'})",
+        f"Data as of: {plan.account_local_time.strftime('%Y-%m-%d %H:%M:%S %Z')} / Beijing {plan.beijing_time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Overall Status: {overall_status}",
+        f"Data Confidence: {confidence}",
+        f"Total Spend: {money(total_spend)}",
+        f"Performance ROAS: {fmt_optional(perf_roas)}",
+        f"Purchase: {fmt(total_purchase)}",
+        f"CPA: {money(safe_div(perf_spend, perf_purchase))}",
+        f"CTR: {pct(safe_div(clicks, impressions))}",
         "",
-        "【1. Overall Summary】",
-        f"- Overall Status: {overall_status}",
-        f"- Total Spend: {money(total_spend)}",
-        f"- Total Purchase: {fmt(total_purchase)}",
-        f"- Total Revenue: {money(total_revenue)}",
-        f"- All-account Blended ROAS: {fmt_optional(safe_div(total_revenue, total_spend))}",
-        f"- Performance-account ROAS: {fmt_optional(safe_div(perf_revenue, perf_spend))}",
-        f"- Performance-account CPA: {money(safe_div(perf_spend, perf_purchase))}",
-        f"- Weighted CTR: {pct(safe_div(clicks, impressions))}",
-        f"- Weighted Frequency: {fmt_optional(safe_div(impressions, reach))}",
-        f"- Data Confidence: {data_confidence(plan, rows)}",
-        "",
-        "【2. Account Status】",
+        "Accounts:",
     ]
-    for row in rows:
-        lines.append(account_line(row))
+    lines.extend(account_line(row) for row in rows)
     lines.extend(
         [
             "",
-            "【3. Review Summary】",
-            f"- Suggestions: {review['total']}",
-            f"- Pending Approval: {review['pending']}",
-            f"- Approved: {review['approved']}",
-            f"- Rejected: {review['rejected']}",
-            f"- High Risk: {review['high_risk']}",
-            f"- Data Error: {review['data_error']}",
+            f"Review RUN_ID: {preview.run_id or 'N/A'}",
+            f"Review data generated at: {preview.created_at or 'N/A'}",
+            f"Pending: {review['pending']} | High Risk: {review['high_risk']} | Data Error: {review['data_error']}",
             "",
-            "【4. Health Summary】",
-            *health_summary(plan, rows, overall_status),
-            "",
-            "【5. Dashboard】",
-            "View More:",
-            dashboard_url,
+            f"View Dashboard: {dashboard_url}",
         ]
     )
     return "\n".join(lines)
@@ -254,8 +240,8 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
 def account_line(row: AccountReportRow) -> str:
     cur = row.current
     if row.account.account_type == "brand":
-        return f"- {row.account.name}: {row.status} | Spend {money(cur.spend)} | CTR {pct(cur.ctr)} | CPM {money(cpm(cur))} | Frequency {fmt_optional(cur.frequency)} | Reach {fmt_optional(cur.reach)} | {row.summary}"
-    return f"- {row.account.name}: {row.status} | Spend {money(cur.spend)} | Purchase {fmt_optional(cur.purchase)} | ROAS {fmt_optional(cur.roas)} | CPA {money(safe_div(cur.spend, cur.purchase))} | CTR {pct(cur.ctr)} | Frequency {fmt_optional(cur.frequency)} | {row.summary}"
+        return f"- {row.account.name}: {row.status} | Spend {money(cur.spend)} | CTR {pct(cur.ctr)} | CPM {money(cpm(cur))} | {row.summary}"
+    return f"- {row.account.name}: {row.status} | Spend {money(cur.spend)} | ROAS {fmt_optional(cur.roas)} | Purchase {fmt_optional(cur.purchase)} | {row.summary}"
 
 
 def cpm(record: InsightRecord) -> Decimal | None:
@@ -266,6 +252,10 @@ def cpm(record: InsightRecord) -> Decimal | None:
 
 def overall_health(rows: list[AccountReportRow]) -> str:
     statuses = {row.status for row in rows}
+    if "DATA_ERROR" in statuses:
+        return "PARTIAL"
+    if "DATA_INSUFFICIENT" in statuses:
+        return "DATA_INSUFFICIENT"
     if "SEVERE_BEAR" in statuses or "BEAR" in statuses:
         return "BEAR"
     if "WEAK" in statuses:
@@ -275,6 +265,12 @@ def overall_health(rows: list[AccountReportRow]) -> str:
     if "HEALTHY" in statuses:
         return "HEALTHY"
     return "NEUTRAL"
+
+
+def overall_report_status(rows: list[AccountReportRow], confidence: str, performance_roas: Decimal | None) -> str:
+    if confidence == "LOW" and performance_roas is None:
+        return "DATA_INSUFFICIENT"
+    return overall_health(rows)
 
 
 def data_confidence(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
@@ -287,17 +283,13 @@ def data_confidence(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
     return plan.confidence_floor
 
 
-def health_summary(plan: ReportPlan, rows: list[AccountReportRow], overall_status: str) -> list[str]:
-    lines = [f"- 整体状态：{overall_status}。"]
-    weak = next((row for row in rows if row.status in {"BEAR", "WEAK", "DATA_ERROR"}), None)
-    lines.append(f"- 重点账户：{weak.account.name}，{weak.summary}" if weak else "- 重点账户：暂无明显异常。")
-    if plan.note:
-        lines.append(f"- 当前策略：{plan.note}")
-    elif overall_status in {"BEAR", "SEVERE_BEAR"}:
-        lines.append("- 当前策略：优先保护预算，避免激进扩量。")
-    else:
-        lines.append("- 当前策略：继续观察 Dashboard 审批队列。")
-    return lines[:3]
+def sum_purchase_value(rows: list[AccountReportRow]) -> Decimal | None:
+    if any(decimal_or_zero(row.current.purchase) > 0 and row.current.purchase_value is None for row in rows):
+        return None
+    values = [row.current.purchase_value for row in rows if row.current.purchase_value is not None]
+    if not values and any(decimal_or_zero(row.current.purchase) > 0 for row in rows):
+        return None
+    return sum((decimal_or_zero(value) for value in values), Decimal("0"))
 
 
 def fmt(value: Decimal | None) -> str:
@@ -314,6 +306,13 @@ def money(value: Decimal | None) -> str:
 
 def pct(value: Decimal | None) -> str:
     return "N/A" if value is None else fmt(value * Decimal("100")) + "%"
+
+
+def parse_as_of(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=BEIJING_TZ)
+    return parsed.astimezone(BEIJING_TZ)
 
 
 def error_insight(account: ReportAccount, period: PeriodSpec, error: str) -> InsightRecord:

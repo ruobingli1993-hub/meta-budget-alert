@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from config import AccountConfig
 from meta_data_provider import AccountMeta, InsightRecord, PeriodSpec
-from scheduled_reports import AccountReportRow, build_report_plan, format_report, judge_account
+from scheduled_reports import AccountReportRow, build_report_plan, format_report, judge_account, parse_as_of
 
 
 PERF = AccountConfig("Performance", "1", "performance")
@@ -81,6 +81,13 @@ class ScheduledReportsTest(unittest.TestCase):
         status, _ = judge_account(BRAND, record(BRAND, value=None, roas=None, ctr="0.03"), record(BRAND, ctr="0.02"), plan)
         self.assertEqual(status, "HEALTHY")
 
+    def test_brand_reach_or_frequency_missing_is_insufficient(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        weak_record = record(BRAND, value=None, roas=None)
+        weak_record = InsightRecord(**{**weak_record.__dict__, "reach": Decimal("0"), "frequency": None})
+        status, _ = judge_account(BRAND, weak_record, record(BRAND), plan)
+        self.assertEqual(status, "DATA_INSUFFICIENT")
+
     def test_performance_and_all_account_roas_are_separate(self) -> None:
         plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
         rows = [
@@ -89,9 +96,34 @@ class ScheduledReportsTest(unittest.TestCase):
         ]
         with patch("scheduled_reports.load_preview") as fake_preview:
             fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-10T09:00:00"
             text = format_report(plan, rows)
-        self.assertIn("All-account Blended ROAS: 1.50", text)
-        self.assertIn("Performance-account ROAS: 3.00", text)
+        self.assertNotIn("All-account Blended ROAS", text)
+        self.assertIn("Performance ROAS: 3.00", text)
+
+    def test_low_confidence_and_missing_performance_roas_is_insufficient(self) -> None:
+        plan = build_report_plan("early-pulse", "America/Phoenix", datetime(2026, 7, 10, 18, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        rows = [AccountReportRow(PERF, META, record(PERF, spend="10", purchase="0", value=None, roas=None), None, None, "DATA_INSUFFICIENT", "low")]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-10T09:00:00"
+            text = format_report(plan, rows)
+        self.assertIn("Overall Status: DATA_INSUFFICIENT", text)
+        self.assertNotIn("Overall Status: HEALTHY", text)
+
+    def test_purchase_value_missing_shows_revenue_and_roas_na(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        rows = [AccountReportRow(PERF, META, record(PERF, spend="100", purchase="2", value=None, roas=None), None, None, "DATA_INSUFFICIENT", "missing value")]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-10T09:00:00"
+            text = format_report(plan, rows)
+        self.assertIn("Performance ROAS: N/A", text)
+        self.assertIn("ROAS N/A", text)
+        self.assertNotIn("ROAS 0.00", text)
 
     def test_api_failure_not_zero_and_dashboard_url_missing(self) -> None:
         plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 10, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
@@ -99,10 +131,18 @@ class ScheduledReportsTest(unittest.TestCase):
         rows = [AccountReportRow(PERF, None, failed, None, None, "DATA_ERROR", "failed")]
         with patch.dict(os.environ, {}, clear=True), patch("scheduled_reports.load_preview") as fake_preview:
             fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_old"
+            fake_preview.return_value.created_at = "2026-07-09T09:00:00"
             text = format_report(plan, rows)
-        self.assertIn("Overall Status: PARTIAL", text)
+        self.assertIn("Overall Status: DATA_INSUFFICIENT", text)
         self.assertIn("Dashboard URL not configured", text)
         self.assertNotIn("Spend $0.00", text)
+        self.assertIn("Review RUN_ID: budget_old", text)
+        self.assertIn("Review data generated at: 2026-07-09T09:00:00", text)
+
+    def test_as_of_parses_offset_datetime(self) -> None:
+        parsed = parse_as_of("2026-07-10T18:00:00-07:00")
+        self.assertEqual(parsed.astimezone(ZoneInfo("America/Phoenix")).hour, 18)
 
     def test_github_cron_and_dispatch(self) -> None:
         workflow = Path(".github/workflows/scheduled_reports.yml").read_text(encoding="utf-8")

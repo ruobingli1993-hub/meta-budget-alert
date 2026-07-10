@@ -73,6 +73,10 @@ def parse_args() -> argparse.Namespace:
         help="Send a concise scheduled Meta report for the selected slot.",
     )
     parser.add_argument(
+        "--as-of",
+        help="Optional ISO datetime for local scheduled-report testing, for example 2026-07-10T18:00:00-07:00.",
+    )
+    parser.add_argument(
         "--budget-manager-apply",
         metavar="RUN_ID",
         help="Apply a saved Budget Manager preview after exact APPLY confirmation.",
@@ -329,7 +333,7 @@ if __name__ == "__main__":
     if args.morning_report:
         raise SystemExit(run_morning_report())
     if args.scheduled_report:
-        raise SystemExit(run_scheduled_report(args.scheduled_report))
+        raise SystemExit(run_scheduled_report(args.scheduled_report, args.as_of))
     if args.budget_manager_preview:
         budget_manager_analyzer.preview()
         raise SystemExit(0)

@@ -10,12 +10,15 @@ from unittest.mock import patch
 from dashboard import approval_store
 from dashboard.approval_store import export_rejection_summary, save_approval
 from dashboard.data_loader import (
+    account_comparison_chart_data,
+    approval_chart_data,
     build_feishu_daily_summary,
     dashboard_summary,
     filter_suggestions,
     load_preview,
     overall_summary,
     rule_feedback,
+    trend_chart_data,
 )
 
 
@@ -173,6 +176,16 @@ class DashboardTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             message = build_feishu_daily_summary(preview)
         self.assertIn("Dashboard URL not configured", message)
+
+    def test_dashboard_chart_data_separates_brand_and_performance(self) -> None:
+        preview = load_preview(self.preview_path)
+        trend = trend_chart_data(preview, "Spend")
+        performance, brand = account_comparison_chart_data(preview)
+        approvals = approval_chart_data(preview)
+        self.assertIn("Today", trend)
+        self.assertTrue(all("ROAS" in row for row in performance))
+        self.assertTrue(all("ROAS" not in row for row in brand))
+        self.assertIn("Pending", approvals)
 
     def test_dashboard_does_not_import_meta_api_or_execute_writes(self) -> None:
         for path in [Path("dashboard/app.py"), Path("dashboard/data_loader.py"), Path("dashboard/approval_store.py")]:

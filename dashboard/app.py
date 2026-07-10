@@ -13,13 +13,16 @@ from dashboard.approval_store import REJECT_REASONS, export_rejection_summary, l
 from dashboard.components import suggestion_detail, suggestion_table_rows
 from dashboard.data_loader import (
     account_status_rows,
+    account_comparison_chart_data,
     automation_readiness,
+    approval_chart_data,
     dashboard_summary,
     filter_suggestions,
     latest_preview_path,
     load_preview,
     overall_summary,
     rule_feedback,
+    trend_chart_data,
 )
 
 
@@ -75,6 +78,17 @@ def render_home(preview) -> None:
     if st.button("View Review Queue", type="primary"):
         st.session_state["go_review"] = True
         st.rerun()
+
+    st.subheader("4. Charts")
+    metric = st.selectbox("Trend Metric", ["Spend", "ROAS"])
+    st.line_chart(trend_chart_data(preview, metric))
+    performance_data, brand_data = account_comparison_chart_data(preview)
+    st.caption("Performance Account Comparison")
+    st.bar_chart(performance_data, x="Account", y=["Spend", "ROAS"])
+    st.caption("Brand Account Comparison")
+    st.bar_chart(brand_data, x="Account", y=["Spend", "CTR", "CPM"])
+    st.caption("Review Status")
+    st.bar_chart(approval_chart_data(preview))
 
 
 def render_review(preview) -> None:

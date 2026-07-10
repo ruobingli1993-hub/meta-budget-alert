@@ -77,10 +77,17 @@ After each completed development task, bug fix, or new feature, update this file
 - Added scheduled report logging at `logs/scheduled_reports.log`.
 - Added independent GitHub Actions workflow at `.github/workflows/scheduled_reports.yml`.
 - Added scheduled report tests for time windows, America/Phoenix date boundaries, Brand health rules, all-account vs performance ROAS, API failure protection, Dashboard URL fallback, cron values, and manual workflow dispatch.
+- Simplified scheduled Feishu reports to concise summary lines only.
+- Fixed scheduled report status logic so LOW confidence plus unavailable Performance ROAS becomes `DATA_INSUFFICIENT`.
+- Fixed missing Purchase Value handling so Revenue / ROAS display `N/A` instead of `0.00`.
+- Fixed Brand Account health logic so missing Reach / Frequency becomes `DATA_INSUFFICIENT`.
+- Added Review RUN_ID and generated time to scheduled report Review Summary.
+- Added `--as-of` for local scheduled-report time simulation.
+- Added Dashboard home charts for trend, account comparison, and review status.
 
 ## Current Work
 
-- Scheduled Meta Reports V1 complete.
+- Scheduled reports simplification and Dashboard chart update complete.
 - No active feature development.
 
 ## Environment
@@ -111,6 +118,9 @@ After each completed development task, bug fix, or new feature, update this file
   - `python main.py --scheduled-report morning`
   - `python main.py --scheduled-report daily-close`
   - `python main.py --scheduled-report early-pulse`
+- Test report time windows locally with:
+  - `python main.py --scheduled-report morning --as-of "2026-07-10T18:00:00-07:00"`
+  - `python main.py --scheduled-report early-pulse --as-of "2026-07-10T03:00:00-07:00"`
 - Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
 - Review `logs/meta_data_provider.log` for unified request/debug data.
 - Review `logs/scheduled_reports.log` after scheduled report tests.
@@ -165,12 +175,15 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Unified Meta Data Provider tests: passed, 9 tests.
 - Dashboard tests: passed, 10 tests.
 - Scheduled report tests: passed, 8 tests.
+- Scheduled report simplification tests: passed.
+- Dashboard chart data tests: passed.
 - `python3.14 -m compileall main.py skills\budget_manager`: passed.
 - `python3.14 -m compileall main.py morning_report.py meta_data_provider.py skills\budget_manager tests`: passed.
 - `python3.14 -m compileall main.py scheduled_reports.py meta_data_provider.py tests`: passed.
 - `python3.14 -m unittest tests.test_meta_data_provider`: passed.
 - `python3.14 -m unittest tests.test_dashboard tests.test_meta_data_provider`: passed, 19 tests.
 - `python3.14 -m unittest tests.test_scheduled_reports tests.test_dashboard tests.test_meta_data_provider`: passed, 27 tests.
+- `python3.14 -m unittest tests.test_scheduled_reports tests.test_dashboard tests.test_meta_data_provider`: passed, 32 tests.
 - `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
 - `python3.14 -c "import streamlit"`: failed in Codex shell because Streamlit is not installed in this environment; install with `pip install -r requirements.txt` in Windows CMD.
 - `git diff --check`: passed.

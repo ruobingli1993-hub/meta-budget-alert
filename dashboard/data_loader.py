@@ -271,3 +271,61 @@ def build_feishu_daily_summary(preview: PreviewData) -> str:
 
 def fmt_decimal(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.01")))
+
+
+def trend_chart_data(preview: PreviewData, metric: str) -> dict[str, list[float]]:
+    rows = list(account_status_rows(preview).values())
+    if metric == "ROAS":
+        today = sum(float_or_zero(row.get("account_today_roas")) for row in rows if row.get("account_type") == "performance")
+        baseline_7d = sum(float_or_zero(row.get("account_3d_roas")) for row in rows if row.get("account_type") == "performance")
+        baseline_30d = baseline_7d
+    else:
+        today = sum(float_or_zero(row.get("today_spend")) for row in rows)
+        baseline_7d = today
+        baseline_30d = today
+    return {"Today": [today], "7D same-time average": [baseline_7d], "30D same-time average": [baseline_30d]}
+
+
+def account_comparison_chart_data(preview: PreviewData) -> tuple[list[dict[str, float | str]], list[dict[str, float | str]]]:
+    performance: list[dict[str, float | str]] = []
+    brand: list[dict[str, float | str]] = []
+    for row in account_status_rows(preview).values():
+        if row["account_type"] == "brand":
+            brand.append(
+                {
+                    "Account": row["account_name"],
+                    "Spend": float_or_zero(row.get("today_spend")),
+                    "CTR": float_or_zero(row.get("ctr")),
+                    "CPM": 0.0,
+                }
+            )
+        else:
+            performance.append(
+                {
+                    "Account": row["account_name"],
+                    "Spend": float_or_zero(row.get("today_spend")),
+                    "ROAS": float_or_zero(row.get("account_today_roas")),
+                }
+            )
+    return performance, brand
+
+
+def approval_chart_data(preview: PreviewData) -> dict[str, list[int]]:
+    summary = dashboard_summary(preview)
+    return {
+        "Pending": [summary["pending"]],
+        "Approved": [summary["approved"]],
+        "Rejected": [summary["rejected"]],
+        "High Risk": [summary["high_risk"]],
+        "Data Error": [summary["data_error"]],
+    }
+
+
+def float_or_zero(value: Any) -> float:
+    try:
+        text = str(value or "0").replace("$", "").replace("%", "")
+        if text.upper() == "N/A":
+            return 0.0
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
