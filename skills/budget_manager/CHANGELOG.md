@@ -1,5 +1,20 @@
 # Budget Manager Changelog
 
+## v1.2 - 2026-07-10
+
+### Fixed
+
+- Changed Today insights reads to use Meta `date_preset=today` with account-timezone debug context.
+- Added raw Today spend/actions/action_values and parsed purchase/ATC/checkout debug output.
+- Prevented Account Regime from showing `BEAR` when account-level 3D ROAS is unavailable.
+- Changed ATC Rate and Checkout Rate to use Link Clicks and display `N/A` when Link Clicks are unavailable.
+- Limited Learning Status output to confirmed Meta learning states; otherwise it displays `N/A`.
+
+### Known Limitations
+
+- A real Windows CMD preview rerun is still required to confirm Today spend and Today ROAS from Meta.
+- Apply remains manual only and must not be run until preview is approved.
+
 ## v1.1 - 2026-07-10
 
 ### Added

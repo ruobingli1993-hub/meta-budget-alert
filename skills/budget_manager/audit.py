@@ -176,6 +176,26 @@ def build_report(
     for item in data_errors:
         lines.append(f"- {item.get('account_name')} / {item.get('campaign_name')} / {item.get('adset_name')}: {item.get('reason')}")
 
+    lines.extend(["", "## Debug Details"])
+    if not recommendations:
+        lines.append("- None")
+    for item in recommendations:
+        lines.extend(
+            [
+                f"- Account: {item.get('account_name')} / {item.get('account_id')}",
+                f"  Entity: {item.get('entity_level')} | {item.get('campaign_name')} | {item.get('adset_name')}",
+                f"  Account Timezone: {item.get('account_timezone')}",
+                f"  Today Request: date_preset={item.get('today_date_preset') or 'N/A'}, since={item.get('today_request_since')}, until={item.get('today_request_until')}",
+                f"  Raw Insights Has Data: {item.get('today_raw_has_data')}",
+                f"  Raw Today Spend: {item.get('today_raw_spend')}",
+                f"  Raw Today Actions: {json.dumps(item.get('today_raw_actions') or [], ensure_ascii=False)}",
+                f"  Raw Today Action Values: {json.dumps(item.get('today_raw_action_values') or [], ensure_ascii=False)}",
+                f"  Parsed Today Purchase / ATC / Checkout: {item.get('parsed_today_purchase')} / {item.get('parsed_today_atc')} / {item.get('parsed_today_checkout')}",
+                f"  Parsed Today Link Clicks: {item.get('parsed_today_link_clicks')}",
+                f"  Regime Calculation Inputs: {json.dumps(item.get('regime_calculation_inputs') or {}, ensure_ascii=False)}",
+            ]
+        )
+
     summary = summarize(recommendations)
     lines.extend(
         [

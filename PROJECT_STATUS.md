@@ -52,10 +52,17 @@ After each completed development task, bug fix, or new feature, update this file
 - Added Budget Manager CHANGELOG at `skills/budget_manager/CHANGELOG.md`.
 - Added CMD progress output for Budget Manager preview/apply/rollback.
 - Restored readable Chinese account names in code and README.
+- Fixed Budget Manager Preview Today insights debugging:
+  - Today reads now use Meta `date_preset=today` and log the ad account timezone plus expected since/until dates.
+  - Preview logs now include raw Today spend, actions, action_values, and parsed purchase / ATC / checkout.
+  - Link Clicks are used as the ATC / Checkout rate denominator; rates display `N/A` when Link Clicks are unavailable.
+  - Account Regime no longer reports `BEAR` when account-level 3D ROAS is unavailable.
+  - Learning Status now displays only confirmed Meta learning states; otherwise it displays `N/A`.
+  - Single-run reports now include a Debug Details section for GPT review.
 
 ## Current Work
 
-- Budget Manager Skill V1 audit/progress logging update complete.
+- Budget Manager Preview data/debug fix complete.
 - No active feature development.
 
 ## Environment
@@ -78,7 +85,6 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Validate the Feishu Morning Report V1 format locally.
 - Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
 - Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
 - Do not run `--budget-manager-apply` until preview is confirmed.
@@ -93,6 +99,8 @@ After each completed development task, bug fix, or new feature, update this file
 - GitHub push failed from this shell because it could not connect to `github.com:443`.
 - A local `.env` file exists. Its contents were not read or displayed during the health check.
 - `__pycache__` files exist from previous local execution. They are ignored by `.gitignore`.
+- Budget Manager Preview needs one more real Windows CMD run to confirm Today spend and Today ROAS now match Meta account-timezone data.
+- No real budget apply has been executed.
 
 ## Latest Test Results
 
@@ -123,6 +131,11 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Budget Manager config load validation: passed.
 - GitHub Actions workflow unchanged for Budget Manager work.
 - Budget Manager run-log/report implementation validation: passed.
+- Budget Manager Preview parser/regime fake-data test: passed.
+- `python3.14 -m compileall main.py skills\budget_manager`: passed.
+- `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
+- `git diff --check`: passed.
+- Real `python main.py --budget-manager-preview` was not run by Codex for this fix because it sends a Feishu preview; next validation should be run by the user in Windows CMD.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:
   - Processing account 1/3: QMDT—20240103 / `750289240467952`
   - Processing account 2/3: 销售三部—新主页账户 / `5600626876733411`

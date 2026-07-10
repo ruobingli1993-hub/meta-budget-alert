@@ -43,16 +43,16 @@ class MetricWindow:
         return self.purchase_value / self.spend
 
     @property
-    def atc_rate(self) -> Decimal:
-        return self.atc / self.clicks if self.clicks else Decimal("0")
+    def atc_rate(self) -> Decimal | None:
+        return self.atc / self.clicks if self.clicks else None
 
     @property
-    def checkout_rate(self) -> Decimal:
-        return self.checkout / self.clicks if self.clicks else Decimal("0")
+    def checkout_rate(self) -> Decimal | None:
+        return self.checkout / self.clicks if self.clicks else None
 
     @property
-    def purchase_rate(self) -> Decimal:
-        return self.purchase / self.clicks if self.clicks else Decimal("0")
+    def purchase_rate(self) -> Decimal | None:
+        return self.purchase / self.clicks if self.clicks else None
 
 
 def load_config() -> dict[str, Any]:
@@ -83,43 +83,38 @@ def has_today_sample(metrics: MetricWindow, config: dict[str, Any]) -> bool:
 
 def determine_account_regime(last_3d: MetricWindow, today: MetricWindow, funnel_anomaly: bool, config: dict[str, Any]) -> tuple[str, str]:
     if not has_last_3d_sample(last_3d, config):
-        return "DATA_INSUFFICIENT", "最近完整3天数据样本不足"
+        return "DATA_INSUFFICIENT", "Last 3 complete days sample is insufficient."
 
     last_3d_roas = last_3d.roas
     today_roas = today.roas
     if last_3d_roas is None:
-        return "DATA_ERROR", "最近完整3天 Purchase Value 或 ROAS 缺失"
+        return "DATA_INSUFFICIENT", "Last 3 complete days ROAS is unavailable; account regime cannot be classified."
 
-    today_sample = has_today_sample(today, config)
-    if not today_sample:
-        if last_3d_roas >= Decimal("3.0"):
-            return "NEUTRAL", "今天样本不足，账户方向需观察"
-        if last_3d_roas < Decimal("2.5"):
-            return "BEAR", "最近完整3天 ROAS 低于 2.5，今天样本不足"
-        return "NEUTRAL", "今天样本不足"
+    if not has_today_sample(today, config):
+        return "NEUTRAL", "Today sample is insufficient; account direction needs observation."
 
     if today_roas is None:
-        return "DATA_ERROR", "今天 Purchase Value 或 ROAS 缺失"
+        return "DATA_ERROR", "Today purchase value or ROAS is unavailable."
 
     if last_3d_roas >= Decimal("4.0") and today_roas >= Decimal("3.0") and last_3d.purchase >= Decimal("3") and not funnel_anomaly:
-        return "BULL", "账户最近3天和今天都明显高于目标"
+        return "BULL", "Account 3D and today ROAS are both clearly above target."
     if last_3d_roas >= Decimal("3.0"):
-        return "HEALTHY", "最近完整3天 ROAS 达到目标"
+        return "HEALTHY", "Last 3 complete days ROAS reached target."
     if last_3d_roas >= Decimal("2.5"):
-        return "NEUTRAL", "最近完整3天 ROAS 处于中性区间"
+        return "NEUTRAL", "Last 3 complete days ROAS is neutral."
     if last_3d_roas < Decimal("2.0") and today_roas < Decimal("2.0"):
-        return "SEVERE_BEAR", "最近完整3天和今天 ROAS 均低于 2.0"
-    return "BEAR", "最近完整3天 ROAS 低于 2.5"
+        return "SEVERE_BEAR", "Last 3 complete days and today ROAS are both below 2.0."
+    return "BEAR", "Last 3 complete days ROAS is below 2.5."
 
 
 def detect_funnel_anomaly(current: MetricWindow, avg_30d: MetricWindow, config: dict[str, Any]) -> tuple[bool, str]:
     target = Decimal(str(config["target_purchase_roas"]))
-    atc_strong = avg_30d.atc_rate > 0 and current.atc_rate > avg_30d.atc_rate * Decimal("1.2")
-    checkout_strong = avg_30d.checkout_rate > 0 and current.checkout_rate > avg_30d.checkout_rate * Decimal("1.2")
-    purchase_not_growing = avg_30d.purchase_rate > 0 and current.purchase_rate <= avg_30d.purchase_rate
+    atc_strong = avg_30d.atc_rate is not None and current.atc_rate is not None and avg_30d.atc_rate > 0 and current.atc_rate > avg_30d.atc_rate * Decimal("1.2")
+    checkout_strong = avg_30d.checkout_rate is not None and current.checkout_rate is not None and avg_30d.checkout_rate > 0 and current.checkout_rate > avg_30d.checkout_rate * Decimal("1.2")
+    purchase_not_growing = avg_30d.purchase_rate is not None and current.purchase_rate is not None and avg_30d.purchase_rate > 0 and current.purchase_rate <= avg_30d.purchase_rate
     roas_low = current.roas is None or current.roas < target
     if (atc_strong or checkout_strong) and (purchase_not_growing or roas_low):
-        return True, "前置转化指标异常好，但没有转化为 Purchase"
+        return True, "Front-end funnel events improved, but purchase did not grow with them."
     return False, ""
 
 
@@ -171,43 +166,43 @@ def evaluate_entity(
 ) -> dict[str, Any]:
     funnel_anomaly, funnel_reason = detect_funnel_anomaly(today, avg_30d, config)
     if not has_last_3d_sample(last_3d, config) or not has_today_sample(today, config):
-        return decision("DATA_INSUFFICIENT", current_budget, config, "数据样本不足", funnel_anomaly, funnel_reason)
+        return decision("DATA_INSUFFICIENT", current_budget, config, "Data sample is insufficient.", funnel_anomaly, funnel_reason)
     if last_3d.roas is None or today.roas is None:
-        return decision("DATA_ERROR", current_budget, config, "Purchase Value 或 ROAS 缺失", funnel_anomaly, funnel_reason)
+        return decision("DATA_ERROR", current_budget, config, "Purchase value or ROAS is unavailable.", funnel_anomaly, funnel_reason)
     if funnel_anomaly:
-        return decision("NO_CHANGE", current_budget, config, "Funnel Anomaly，前置指标不能触发加预算", funnel_anomaly, funnel_reason)
+        return decision("NO_CHANGE", current_budget, config, "Funnel Anomaly blocks budget increase.", funnel_anomaly, funnel_reason)
     if account_regime in {"DATA_INSUFFICIENT", "DATA_ERROR"}:
-        return decision(account_regime, current_budget, config, "账户状态不允许调整", funnel_anomaly, funnel_reason)
+        return decision(account_regime, current_budget, config, "Account regime blocks budget changes.", funnel_anomaly, funnel_reason)
 
     action = "NO_CHANGE"
-    reason = "默认 NO_CHANGE"
+    reason = "Default NO_CHANGE."
     if budget_model == "ABO" and entity_level == "Ad Set":
         if last_3d.roas < Decimal("2.0") and today.roas <= Decimal("2.0"):
             action = config["actions_by_regime"]["abo_decrease"].get(account_regime, "NO_CHANGE")
-            reason = "ABO Ad Set 最近3天和今天 ROAS 均偏低"
+            reason = "ABO Ad Set 3D and today ROAS are both low."
         elif last_3d.roas < Decimal("2.0") and today.roas > Decimal("2.0"):
-            reason = "今天表现恢复，暂不降预算"
+            reason = "Today performance recovered; no decrease."
     elif budget_model == "CBO" and entity_level == "Campaign" and rtg:
         if last_3d.roas > Decimal("3.5") and last_3d.purchase >= Decimal("2") and today.roas >= Decimal("3.0") and today.purchase >= Decimal("1"):
             action = config["actions_by_regime"]["rtg_cbo_increase"].get(account_regime, "NO_CHANGE")
-            reason = "RTG CBO 达到加预算条件"
+            reason = "RTG CBO meets increase conditions."
     elif budget_model == "CBO" and entity_level == "Campaign":
         if last_3d.roas > Decimal("2.5") and today.roas > Decimal("2.5") and last_3d.purchase >= Decimal("2") and today.purchase >= Decimal("1"):
             action = config["actions_by_regime"]["non_rtg_cbo_increase"].get(account_regime, "NO_CHANGE")
-            reason = "非 RTG CBO 达到加预算条件"
+            reason = "Non-RTG CBO meets increase conditions."
         elif last_3d.roas < Decimal("2.0") and today.roas < Decimal("2.0"):
             action = config["actions_by_regime"]["non_rtg_cbo_decrease"].get(account_regime, "NO_CHANGE")
-            reason = "非 RTG CBO 最近3天和今天 ROAS 均偏低"
+            reason = "Non-RTG CBO 3D and today ROAS are both low."
         else:
-            reason = "最近3天和今天方向不一致或不满足调整条件"
+            reason = "3D and today direction are inconsistent or conditions are not met."
 
     if learning_status.lower() in {"learning", "learning limited", "learning_limited"}:
         original = action
         action = learning_limited_action(action)
         if original != action:
-            reason = f"Learning 状态限制单次调整最多 10%；原建议 {original} 已降级"
+            reason = f"Learning status caps the adjustment at 10%; original action was {original}."
         elif action != "NO_CHANGE":
-            reason = "Learning 状态，仅允许微调"
+            reason = "Learning status allows only a small adjustment."
 
     return decision(action, current_budget, config, reason, funnel_anomaly, funnel_reason)
 
@@ -215,7 +210,10 @@ def evaluate_entity(
 def decision(action: str, current_budget: Decimal | None, config: dict[str, Any], reason: str, funnel_anomaly: bool, funnel_reason: str) -> dict[str, Any]:
     hint = ""
     if funnel_anomaly:
-        hint = "前置转化指标异常好，但没有转化为 Purchase。请人工检查素材、Landing Page、Checkout、Pixel/CAPI、Attribution、Meta 进阶赋能功能。"
+        hint = (
+            "Front-end conversion metrics are strong but did not convert to purchase. "
+            "Manually check creative intent, Landing Page, Checkout, Pixel/CAPI, Attribution, and Meta Advantage+ settings."
+        )
     new_budget = proposed_budget(current_budget, action, config)
     return {
         "proposed_action": action,
