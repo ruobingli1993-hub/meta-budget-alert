@@ -69,10 +69,18 @@ After each completed development task, bug fix, or new feature, update this file
 - Added Dashboard runtime log at `logs/dashboard.log`.
 - Added concise Feishu Budget Manager Preview summary with `DASHBOARD_URL` support.
 - Added Dashboard tests for preview loading, summaries, account status, Approve, Reject, Skip, original preview protection, filters, approval stats, Rule Feedback, missing `DASHBOARD_URL`, no Meta API calls, and no real write execution.
+- Added unified scheduled report command: `python main.py --scheduled-report morning|daily-close|early-pulse`.
+- Added three concise scheduled Meta reports:
+  - 09:00 Beijing Morning Realtime with same-time-window comparison.
+  - 15:30 Beijing Daily Close with previous complete account day.
+  - 18:00 Beijing Early Pulse with early same-time-window comparison.
+- Added scheduled report logging at `logs/scheduled_reports.log`.
+- Added independent GitHub Actions workflow at `.github/workflows/scheduled_reports.yml`.
+- Added scheduled report tests for time windows, America/Phoenix date boundaries, Brand health rules, all-account vs performance ROAS, API failure protection, Dashboard URL fallback, cron values, and manual workflow dispatch.
 
 ## Current Work
 
-- Dashboard and unified approval center V1 complete.
+- Scheduled Meta Reports V1 complete.
 - No active feature development.
 
 ## Environment
@@ -99,8 +107,13 @@ After each completed development task, bug fix, or new feature, update this file
 - Run `python main.py --morning-report` in Windows CMD before preview and compare Today Spend / Purchase / ROAS for the same account across both outputs.
 - Start Dashboard locally with `streamlit run dashboard/app.py`.
 - Review and record Budget Manager Preview decisions in Dashboard before any future apply step.
+- Manually test scheduled reports in Windows CMD:
+  - `python main.py --scheduled-report morning`
+  - `python main.py --scheduled-report daily-close`
+  - `python main.py --scheduled-report early-pulse`
 - Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
 - Review `logs/meta_data_provider.log` for unified request/debug data.
+- Review `logs/scheduled_reports.log` after scheduled report tests.
 - Do not run `--budget-manager-apply` until preview is confirmed.
 - After report format validation, push the committed changes to GitHub.
 - Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
@@ -117,6 +130,7 @@ After each completed development task, bug fix, or new feature, update this file
 - No real budget apply has been executed.
 - Dashboard V1 is local-only and has not been publicly deployed.
 - Streamlit is added to `requirements.txt`; the Codex shell does not currently have Streamlit installed, so the Dashboard server was not started here.
+- Scheduled report commands were compile/unit tested locally but not run against real Meta/Feishu from Codex shell.
 
 ## Latest Test Results
 
@@ -150,10 +164,13 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Budget Manager Preview parser/regime fake-data test: passed.
 - Unified Meta Data Provider tests: passed, 9 tests.
 - Dashboard tests: passed, 10 tests.
+- Scheduled report tests: passed, 8 tests.
 - `python3.14 -m compileall main.py skills\budget_manager`: passed.
 - `python3.14 -m compileall main.py morning_report.py meta_data_provider.py skills\budget_manager tests`: passed.
+- `python3.14 -m compileall main.py scheduled_reports.py meta_data_provider.py tests`: passed.
 - `python3.14 -m unittest tests.test_meta_data_provider`: passed.
 - `python3.14 -m unittest tests.test_dashboard tests.test_meta_data_provider`: passed, 19 tests.
+- `python3.14 -m unittest tests.test_scheduled_reports tests.test_dashboard tests.test_meta_data_provider`: passed, 27 tests.
 - `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
 - `python3.14 -c "import streamlit"`: failed in Codex shell because Streamlit is not installed in this environment; install with `pip install -r requirements.txt` in Windows CMD.
 - `git diff --check`: passed.

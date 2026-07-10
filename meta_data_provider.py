@@ -162,6 +162,19 @@ class MetaDataProvider:
     ) -> list[InsightRecord]:
         account_meta = meta or self.get_account_meta(account)
         period = self.period(account_meta, period_name)
+        return self.get_insights_for_period(account, level, period, entity_id=entity_id, entity_name=entity_name, meta=account_meta)
+
+    def get_insights_for_period(
+        self,
+        account: AdAccount,
+        level: InsightLevel,
+        period: PeriodSpec,
+        entity_id: str | None = None,
+        entity_name: str | None = None,
+        meta: AccountMeta | None = None,
+        hourly_until_hour: int | None = None,
+    ) -> list[InsightRecord]:
+        account_meta = meta or self.get_account_meta(account)
         object_id = entity_id or account.api_id
         fields = insight_fields(level)
         params: dict[str, Any] = {"fields": fields, "access_token": self.api.access_token}
@@ -172,6 +185,8 @@ class MetaDataProvider:
             params["date_preset"] = period.date_preset
         else:
             params["time_range"] = json.dumps({"since": period.since, "until": period.until})
+        if hourly_until_hour is not None:
+            params["breakdowns"] = "hourly_stats_aggregated_by_advertiser_time_zone"
 
         try:
             payload = self.api._request("GET", f"{self.api.base_url}/{object_id}/insights", params=params)
@@ -181,6 +196,8 @@ class MetaDataProvider:
             return [record]
 
         rows = list(payload.get("data", []))
+        if hourly_until_hour is not None:
+            rows = [row for row in rows if hourly_row_start(row) is None or hourly_row_start(row) <= hourly_until_hour]
         if not rows:
             record = empty_record(account_meta, level, object_id, entity_name or object_id, period)
             write_provider_log(record, fields)
@@ -262,6 +279,17 @@ def insight_fields(level: InsightLevel) -> str:
     if level == "adset":
         return ADSET_INSIGHT_FIELDS
     return INSIGHT_FIELDS
+
+
+def hourly_row_start(row: dict[str, Any]) -> int | None:
+    raw = row.get("hourly_stats_aggregated_by_advertiser_time_zone")
+    if not raw:
+        return None
+    text = str(raw).split(" - ")[0]
+    try:
+        return int(text.split(":")[0])
+    except (ValueError, IndexError):
+        return None
 
 
 def record_from_row(account: AccountMeta, level: InsightLevel, period: PeriodSpec, row: dict[str, Any], fallback_id: str, fallback_name: str | None) -> InsightRecord:

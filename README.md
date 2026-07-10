@@ -199,6 +199,48 @@ Dashboard URL not configured
 
 Close the dashboard with `Ctrl+C` in the terminal where Streamlit is running.
 
+## Scheduled Meta Reports
+
+Three concise Feishu reports share the same command, Meta Data Provider, health logic, Feishu sender, and Dashboard URL handling:
+
+```bash
+python main.py --scheduled-report morning
+python main.py --scheduled-report daily-close
+python main.py --scheduled-report early-pulse
+```
+
+Report slots use Beijing time, while Meta data boundaries use each ad account's timezone:
+
+| Mode | Beijing Time | Purpose |
+| --- | --- | --- |
+| `morning` | 09:00 | Realtime same-time-window report |
+| `daily-close` | 15:30 | Previous complete ad-account day close |
+| `early-pulse` | 18:00 | New ad day early startup pulse |
+
+Feishu only receives a concise summary and a View More line. Configure:
+
+```env
+DASHBOARD_URL=http://localhost:8501
+```
+
+If not configured, the report shows:
+
+```text
+Dashboard URL not configured
+```
+
+Scheduled report logs are written to:
+
+```text
+logs/scheduled_reports.log
+```
+
+GitHub Actions workflow:
+
+```text
+.github/workflows/scheduled_reports.yml
+```
+
 ## GitHub Actions
 
 仓库已包含 GitHub Actions workflow：

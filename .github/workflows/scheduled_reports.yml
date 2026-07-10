@@ -1,0 +1,58 @@
+name: Scheduled Meta Reports
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_mode:
+        description: "Report mode to run"
+        required: true
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - daily-close
+          - early-pulse
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "30 7 * * *"
+    - cron: "0 10 * * *"
+
+jobs:
+  scheduled-report:
+    runs-on: ubuntu-latest
+    env:
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL || secrets.DASHBOARD_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve report mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.report_mode }}"
+          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+            MODE="morning"
+          elif [ "${{ github.event.schedule }}" = "30 7 * * *" ]; then
+            MODE="daily-close"
+          elif [ "${{ github.event.schedule }}" = "0 10 * * *" ]; then
+            MODE="early-pulse"
+          else
+            echo "Unknown schedule: ${{ github.event.schedule }}"
+            exit 1
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+      - name: Send scheduled report
+        run: python main.py --scheduled-report "${{ steps.mode.outputs.mode }}"

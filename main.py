@@ -22,6 +22,7 @@ from feishu import FeishuError, FeishuWebhookClient
 from meta_api import AccountBudgetSnapshot, MetaAPIError, MetaMarketingAPI
 from morning_report import build_morning_report
 from notifier import BudgetAlertNotifier, money
+from scheduled_reports import run_scheduled_report
 from skills.budget_manager import analyzer as budget_manager_analyzer
 from skills.budget_manager import executor as budget_manager_executor
 
@@ -65,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         "--budget-manager-preview",
         action="store_true",
         help="Scan Meta budgets and send a no-write Budget Manager preview.",
+    )
+    parser.add_argument(
+        "--scheduled-report",
+        choices=["morning", "daily-close", "early-pulse"],
+        help="Send a concise scheduled Meta report for the selected slot.",
     )
     parser.add_argument(
         "--budget-manager-apply",
@@ -322,6 +328,8 @@ if __name__ == "__main__":
         raise SystemExit(run_check_budget())
     if args.morning_report:
         raise SystemExit(run_morning_report())
+    if args.scheduled_report:
+        raise SystemExit(run_scheduled_report(args.scheduled_report))
     if args.budget_manager_preview:
         budget_manager_analyzer.preview()
         raise SystemExit(0)
