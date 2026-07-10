@@ -43,11 +43,15 @@ After each completed development task, bug fix, or new feature, update this file
 - Changed Morning Report insights parsing so missing required insight fields become account-level data fetch failures instead of silently becoming zero.
 - Added all-accounts-failed Morning Report failure notice instead of sending a normal zero-metric report.
 - Added explicit Morning Report send result messages for normal reports and failure notices.
+- Added Budget Manager Skill V1 files under `skills/budget_manager`.
+- Added guarded Budget Manager commands: `--budget-manager-preview`, `--budget-manager-apply RUN_ID`, and `--budget-manager-rollback RUN_ID`.
+- Added Budget Manager preview snapshot storage under `logs/budget_previews`.
+- Added Budget Manager audit log path `logs/budget_changes.jsonl`.
 - Restored readable Chinese account names in code and README.
 
 ## Current Work
 
-- Morning Report all-accounts-failed failure notice fix complete.
+- Budget Manager Skill V1 implementation complete.
 - No active feature development.
 
 ## Environment
@@ -71,6 +75,8 @@ After each completed development task, bug fix, or new feature, update this file
 ## Suggested Next Steps
 
 - Validate the Feishu Morning Report V1 format locally.
+- Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
+- Do not run `--budget-manager-apply` until preview is confirmed.
 - After report format validation, push the committed changes to GitHub.
 - Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
 
@@ -108,6 +114,9 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Morning Report missing spend failure test: passed.
 - Morning Report all-accounts-failed notice test: passed.
 - Morning Report partial failure test: passed.
+- Budget Manager command wiring compile/help validation: passed.
+- Budget Manager config load validation: passed.
+- GitHub Actions workflow unchanged for Budget Manager work.
 - `python3.14 main.py --morning-report` was run in Codex shell and logged all 3 accounts:
   - Processing account 1/3: QMDT—20240103 / `750289240467952`
   - Processing account 2/3: 销售三部—新主页账户 / `5600626876733411`

@@ -22,6 +22,8 @@ from feishu import FeishuError, FeishuWebhookClient
 from meta_api import AccountBudgetSnapshot, MetaAPIError, MetaMarketingAPI
 from morning_report import build_morning_report
 from notifier import BudgetAlertNotifier, money
+from skills.budget_manager import analyzer as budget_manager_analyzer
+from skills.budget_manager import executor as budget_manager_executor
 
 
 logging.basicConfig(
@@ -58,6 +60,21 @@ def parse_args() -> argparse.Namespace:
         "--morning-report",
         action="store_true",
         help="Generate and send Morning Report V1 without changing budget alert state.",
+    )
+    parser.add_argument(
+        "--budget-manager-preview",
+        action="store_true",
+        help="Scan Meta budgets and send a no-write Budget Manager preview.",
+    )
+    parser.add_argument(
+        "--budget-manager-apply",
+        metavar="RUN_ID",
+        help="Apply a saved Budget Manager preview after exact APPLY confirmation.",
+    )
+    parser.add_argument(
+        "--budget-manager-rollback",
+        metavar="RUN_ID",
+        help="Rollback the latest Budget Manager apply after exact ROLLBACK confirmation.",
     )
     return parser.parse_args()
 
@@ -305,4 +322,11 @@ if __name__ == "__main__":
         raise SystemExit(run_check_budget())
     if args.morning_report:
         raise SystemExit(run_morning_report())
+    if args.budget_manager_preview:
+        budget_manager_analyzer.preview()
+        raise SystemExit(0)
+    if args.budget_manager_apply:
+        raise SystemExit(budget_manager_executor.apply(args.budget_manager_apply))
+    if args.budget_manager_rollback:
+        raise SystemExit(budget_manager_executor.rollback(args.budget_manager_rollback))
     raise SystemExit(run(dry_run=args.dry_run or DRY_RUN))

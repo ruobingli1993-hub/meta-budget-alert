@@ -112,6 +112,47 @@ Campaign Ranking 暂时只输出每个账户的 Top 1 Campaign 和 Bottom 1 Camp
 
 `state.json` 用于记录每个账户是否已经处于告警状态。只要余额持续低于阈值，就不会重复发送告警；当余额恢复到阈值以上后，再次跌破才会重新发送。
 
+## Budget Manager Skill V1
+
+Budget Manager 是高风险预算管理流程，默认必须 `NO_CHANGE`。它不会自动运行，也没有接入 GitHub Actions。
+
+先只运行预览：
+
+```bash
+python main.py --budget-manager-preview
+```
+
+Preview 会：
+
+- 真实读取两个 Performance Account
+- 不修改预算
+- 不修改 `state.json`
+- 发送飞书预览
+- 同时在终端输出
+- 保存快照到 `logs/budget_previews/<RUN_ID>.json`
+
+不要在确认 preview 前运行 apply。
+
+执行命令需要指定 RUN_ID，并且必须手动输入精确的 `APPLY`：
+
+```bash
+python main.py --budget-manager-apply RUN_ID
+```
+
+回滚命令需要指定 RUN_ID，并且必须手动输入精确的 `ROLLBACK`：
+
+```bash
+python main.py --budget-manager-rollback RUN_ID
+```
+
+Budget Manager 规则统一维护在：
+
+```text
+skills/budget_manager/config.json
+```
+
+运行日志和快照保存在 `logs/` 下，本地不会提交。
+
 ## GitHub Actions
 
 仓库已包含 GitHub Actions workflow：

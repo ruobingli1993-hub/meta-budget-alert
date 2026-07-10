@@ -1,0 +1,78 @@
+{
+  "target_purchase_roas": 3.0,
+  "minimum_daily_budget_usd": 80,
+  "preview_log_dir": "logs/budget_previews",
+  "change_log_path": "logs/budget_changes.jsonl",
+  "latest_budget_backup_path": "logs/latest_budget_backup.json",
+  "performance_account_type": "performance",
+  "rtg_keywords": ["RTG", "Retargeting", "Remarketing"],
+  "allowed_actions": [
+    "INCREASE_25",
+    "INCREASE_20",
+    "INCREASE_15",
+    "INCREASE_10",
+    "DECREASE_25",
+    "DECREASE_20",
+    "DECREASE_15",
+    "DECREASE_10",
+    "NO_CHANGE",
+    "DATA_INSUFFICIENT",
+    "DATA_ERROR",
+    "MANUAL_REVIEW",
+    "COOLDOWN"
+  ],
+  "account_regime": {
+    "bull_3d_roas_min": 4.0,
+    "bull_today_roas_min": 3.0,
+    "bull_3d_purchase_min": 3,
+    "healthy_3d_roas_min": 3.0,
+    "neutral_3d_roas_min": 2.5,
+    "bear_3d_roas_max": 2.5,
+    "severe_bear_3d_roas_max": 2.0,
+    "severe_bear_today_roas_max": 2.0
+  },
+  "sample_protection": {
+    "last_3d_spend_min": 240,
+    "last_3d_purchase_min": 2,
+    "today_spend_min": 80,
+    "today_purchase_min": 1
+  },
+  "budget_floor_usd": 80,
+  "cooldown": {
+    "max_adjustments_per_day": 1,
+    "max_same_direction_days": 3,
+    "cooldown_days_after_streak": 3,
+    "learning_max_adjustment_pct": 10,
+    "learning_required_repeated_days": 3
+  },
+  "actions_by_regime": {
+    "abo_decrease": {
+      "BULL": "NO_CHANGE",
+      "HEALTHY": "DECREASE_10",
+      "NEUTRAL": "DECREASE_15",
+      "BEAR": "DECREASE_20",
+      "SEVERE_BEAR": "DECREASE_20"
+    },
+    "non_rtg_cbo_increase": {
+      "BULL": "INCREASE_25",
+      "HEALTHY": "INCREASE_20",
+      "NEUTRAL": "INCREASE_10",
+      "BEAR": "NO_CHANGE",
+      "SEVERE_BEAR": "NO_CHANGE"
+    },
+    "non_rtg_cbo_decrease": {
+      "BULL": "DECREASE_10",
+      "HEALTHY": "DECREASE_15",
+      "NEUTRAL": "DECREASE_20",
+      "BEAR": "DECREASE_20",
+      "SEVERE_BEAR": "DECREASE_25"
+    },
+    "rtg_cbo_increase": {
+      "BULL": "INCREASE_20",
+      "HEALTHY": "INCREASE_15",
+      "NEUTRAL": "INCREASE_10",
+      "BEAR": "NO_CHANGE",
+      "SEVERE_BEAR": "NO_CHANGE"
+    }
+  }
+}
