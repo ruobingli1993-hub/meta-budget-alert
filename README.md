@@ -185,6 +185,23 @@ skills/budget_manager/config.json
 
 运行日志和快照保存在 `logs/` 下，本地不会提交。
 
+## Documentation
+
+Project documentation lives in the repository root:
+
+- `PROJECT_CONTEXT.md`: product vision, principles, modules, and roadmap focus.
+- `AI_MEMORY.md`: stable user preferences and AI collaboration rules.
+- `PROJECT_STATUS.md`: current status, completed work, active work, known bugs, next milestone, recent commits, and latest test notes.
+- `CHANGELOG.md`: date-based project change history.
+
+Recommended reading order for future Codex development:
+
+1. `PROJECT_CONTEXT.md`
+2. `AI_MEMORY.md`
+3. `PROJECT_STATUS.md`
+4. `CHANGELOG.md`
+5. `README.md`
+
 ## Meta Automation Dashboard V1
 
 Dashboard is a local Streamlit workspace for reviewing Budget Manager Preview suggestions.

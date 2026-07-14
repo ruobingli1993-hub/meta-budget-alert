@@ -1,5 +1,57 @@
 # Project Status
 
+## Current Status
+
+- Project Documentation V1 is initialized.
+- Budget Alert monitors three accounts, including Jelenew-Brand & Lab.
+- Budget Alert Debug is the current P0 operational focus.
+- Dashboard V1 is available as the detail and approval workspace.
+- Feishu is kept as a summary-only notification channel.
+- No budget apply has been executed.
+
+## Completed
+
+- Meta API integration
+- Morning Report
+- Scheduled Report
+- Budget Alert
+- Budget Alert Debug
+- Dashboard V1
+- Budget Preview
+- Approval records
+- GitHub Actions budget check
+- Streamlit dashboard foundation
+- Shared Meta Data Provider
+- Brand account added to Budget Alert
+- Project Documentation V1
+
+## In Progress
+
+- P0 Budget Alert Debug validation and operational hardening
+- P1 Dashboard V2 planning
+
+## Known Bugs
+
+- Windows terminal output can show mojibake for Chinese text in some shell contexts.
+- The default `python`, `py`, and `python3` launchers in this environment point to Windows Apps stubs.
+- Streamlit is listed in `requirements.txt`, but it is not installed in the current Codex shell environment.
+- Local `state.json` changes after real checks should not be committed unless intentionally requested.
+
+## Next Milestone
+
+- Finish Budget Alert operational validation.
+- Then move to Dashboard V2.
+- Later add Weekly Report.
+- Keep Budget Apply behind preview, approval, explicit confirmation, verification, and rollback.
+
+## Recent Commits
+
+- `61faf04` Add Brand account to budget alerts
+- `f82b646` Add budget alert debug mode
+- `9b4f08a` Simplify scheduled reports and add dashboard charts
+- `0bdda60` Add scheduled Meta reports
+- `e41128d` Add dashboard approval center
+
 ## Maintenance Rule
 
 After each completed development task, bug fix, or new feature, update this file with:
@@ -96,7 +148,7 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Current Work
 
-- Brand account added to Budget Alert and verified with real Meta reads.
+- Project Documentation V1 initialized.
 - No active feature development.
 
 ## Environment
@@ -236,3 +288,4 @@ Last checked: 2026-07-07 Asia/Shanghai
 - 销售三部—新主页账户 returned balance, last 7 days spend, and average daily spend.
 - `state.json` remained unchanged during local compile/help verification.
 - Feishu webhook URL was not printed in logs.
+- Project Documentation V1 documentation-only update completed; no Python, Dashboard, Workflow, Budget Rule, or apply command was changed or run.
