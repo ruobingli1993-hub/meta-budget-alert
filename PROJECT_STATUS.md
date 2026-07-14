@@ -84,10 +84,15 @@ After each completed development task, bug fix, or new feature, update this file
 - Added Review RUN_ID and generated time to scheduled report Review Summary.
 - Added `--as-of` for local scheduled-report time simulation.
 - Added Dashboard home charts for trend, account comparison, and review status.
+- Added read-only Budget Alert Debug mode via `--check-budget-debug`.
+- Updated Budget Alert balance calculation to use only `account_spend_limit - amount_spent`.
+- Updated Budget Alert spend baseline to use the last 7 complete account-timezone days.
+- Updated Budget Alert de-duplication to allow a repeat alert after 24 hours while still clearing state after recovery.
+- Added Budget Alert Debug log at `logs/budget_alert_debug.log`.
 
 ## Current Work
 
-- Scheduled reports simplification and Dashboard chart update complete.
+- Budget Alert Debug mode complete.
 - No active feature development.
 
 ## Environment
@@ -110,6 +115,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
+- Run `python main.py --check-budget-debug` in Windows CMD to inspect why a low remaining spend limit may not send Feishu.
+- Review `logs/budget_alert_debug.log` after the debug run.
 - Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
 - Run `python main.py --morning-report` in Windows CMD before preview and compare Today Spend / Purchase / ROAS for the same account across both outputs.
 - Start Dashboard locally with `streamlit run dashboard/app.py`.
@@ -141,6 +148,7 @@ After each completed development task, bug fix, or new feature, update this file
 - Dashboard V1 is local-only and has not been publicly deployed.
 - Streamlit is added to `requirements.txt`; the Codex shell does not currently have Streamlit installed, so the Dashboard server was not started here.
 - Scheduled report commands were compile/unit tested locally but not run against real Meta/Feishu from Codex shell.
+- Budget Alert Debug was compile/unit tested locally but not run against real Meta from Codex shell.
 
 ## Latest Test Results
 
@@ -185,6 +193,11 @@ Last checked: 2026-07-07 Asia/Shanghai
 - `python3.14 -m unittest tests.test_scheduled_reports tests.test_dashboard tests.test_meta_data_provider`: passed, 27 tests.
 - `python3.14 -m unittest tests.test_scheduled_reports tests.test_dashboard tests.test_meta_data_provider`: passed, 32 tests.
 - `python3.14 main.py --help`: passed and confirms Budget Manager preview/apply/rollback commands remain available.
+- `python3.14 -m compileall main.py meta_api.py notifier.py tests`: passed.
+- `python3.14 -m unittest tests.test_budget_alert`: passed, 6 tests.
+- `python3.14 main.py --help`: passed and confirms `--check-budget-debug` is available.
+- Budget Alert Debug validation confirms no Feishu send and no `state.json` write path in debug mode.
+- Budget Alert de-duplication unit tests confirm duplicate alerts are blocked inside 24 hours, repeat alerts are allowed after 24 hours, and recovery clears `last_alert_sent_at`.
 - `python3.14 -c "import streamlit"`: failed in Codex shell because Streamlit is not installed in this environment; install with `pip install -r requirements.txt` in Windows CMD.
 - `git diff --check`: passed.
 - Real `python main.py --budget-manager-preview` was not run by Codex for this fix because it sends a Feishu preview; next validation should be run by the user in Windows CMD.

@@ -78,6 +78,36 @@ python main.py
 python main.py --check-budget
 ```
 
+## Budget Alert Debug
+
+Use the read-only debug command when an account looks low in Meta but Feishu did not send a budget alert:
+
+```bash
+python main.py --check-budget-debug
+```
+
+This mode:
+
+- reads the two Performance accounts from Meta
+- does not send Feishu messages
+- does not modify `state.json`
+- does not execute any Meta write operation
+- writes diagnostic logs to `logs/budget_alert_debug.log`
+
+Budget Alert and Budget Alert Debug use the same remaining spend limit calculation:
+
+```text
+remaining_spend_limit = account_spend_limit - amount_spent
+```
+
+The debug output shows the spend cap, cumulative amount spent, remaining spend limit, last 7 complete days spend, average daily spend, estimated days remaining, threshold amount, previous alert state, de-duplication result, and final trigger reason.
+
+De-duplication behavior:
+
+- if an account is still below threshold and was alerted less than 24 hours ago, another alert is blocked
+- if it remains below threshold for 24 hours after the last alert, a repeat alert is allowed
+- if the remaining spend limit recovers above threshold, the alert state is cleared
+
 ## Morning Report V1
 
 Morning Report V1 是独立报告命令，不会修改 `state.json`，也不会影响预算预警命令：
