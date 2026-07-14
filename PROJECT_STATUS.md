@@ -89,10 +89,14 @@ After each completed development task, bug fix, or new feature, update this file
 - Updated Budget Alert spend baseline to use the last 7 complete account-timezone days.
 - Updated Budget Alert de-duplication to allow a repeat alert after 24 hours while still clearing state after recovery.
 - Added Budget Alert Debug log at `logs/budget_alert_debug.log`.
+- Fixed Meta spend-cap field mapping: API now requests `spend_cap` and maps it to the internal `account_spend_limit` field.
+- Added Budget Alert output for `account_status` and explicit `spend_cap` / `remaining_balance` debug fields.
+- Added Jelenew-Brand & Lab / `568835832834495` to Budget Alert monitoring.
+- Confirmed Budget Alert and Morning Report both contain the same three unique configured accounts.
 
 ## Current Work
 
-- Budget Alert Debug mode complete.
+- Brand account added to Budget Alert and verified with real Meta reads.
 - No active feature development.
 
 ## Environment
@@ -148,7 +152,7 @@ After each completed development task, bug fix, or new feature, update this file
 - Dashboard V1 is local-only and has not been publicly deployed.
 - Streamlit is added to `requirements.txt`; the Codex shell does not currently have Streamlit installed, so the Dashboard server was not started here.
 - Scheduled report commands were compile/unit tested locally but not run against real Meta/Feishu from Codex shell.
-- Budget Alert Debug was compile/unit tested locally but not run against real Meta from Codex shell.
+- Budget Alert Debug was real-read tested against Meta after switching from `account_spend_limit` to `spend_cap`.
 
 ## Latest Test Results
 
@@ -163,7 +167,7 @@ Last checked: 2026-07-07 Asia/Shanghai
 - Morning Report fake-data build test: passed.
 - Morning Report output structure includes all five required sections.
 - Campaign action validation confirmed V1 does not output Pause, Scale, or Increase Budget.
-- `python3.14 -c "from config import ACCOUNTS, REPORT_ACCOUNTS; ..."` confirmed Budget Alert has 2 performance accounts and Morning Report has 3 accounts.
+- `python3.14 -c "from config import ACCOUNTS, REPORT_ACCOUNTS; ..."` confirmed Budget Alert has 3 accounts and Morning Report has 3 accounts, with no duplicate account IDs.
 - Morning Report all-three-accounts fake-data test: passed.
 - Morning Report failed-account visibility test: passed.
 - Morning Report simplified fake-data test: passed.
@@ -198,6 +202,18 @@ Last checked: 2026-07-07 Asia/Shanghai
 - `python3.14 main.py --help`: passed and confirms `--check-budget-debug` is available.
 - Budget Alert Debug validation confirms no Feishu send and no `state.json` write path in debug mode.
 - Budget Alert de-duplication unit tests confirm duplicate alerts are blocked inside 24 hours, repeat alerts are allowed after 24 hours, and recovery clears `last_alert_sent_at`.
+- `python3.14 -m compileall .`: passed.
+- `python3.14 -m unittest discover -s tests`: passed, 38 tests.
+- `python3.14 main.py --check-budget-debug`: passed with real Meta reads.
+- QMDT—20240103 real Debug result: `spend_cap` `$1291000.01`, `amount_spent` `$1225998.44`, `remaining_balance` `$65001.57`, currency `USD`, account status `1`.
+- 销售三部—新主页账户 real Debug result: `spend_cap` `$140031.00`, `amount_spent` `$137327.38`, `remaining_balance` `$2703.62`, currency `USD`, account status `1`.
+- `python3.14 main.py --check-budget`: passed with real Meta reads and updated `state.json`; no Feishu alert was sent because both accounts were above the 3-day threshold.
+- `python3.14 -m compileall main.py config.py meta_api.py notifier.py tests`: passed.
+- `python3.14 -m unittest discover -s tests`: passed, 39 tests.
+- `python3.14 -c "from config import ACCOUNTS, REPORT_ACCOUNTS; ..."` confirmed Budget Alert has 3 accounts and Morning Report has 3 accounts, with no duplicate account IDs.
+- `python3.14 main.py --check-budget-debug`: passed with real Meta reads for all 3 Budget Alert accounts and did not modify `state.json`.
+- Jelenew-Brand & Lab real Debug result: `spend_cap` `$131900.01`, `amount_spent` `$116385.34`, `remaining_balance` `$15514.67`, average daily spend `$79.69`, 3-day threshold `$239.08`, currency `USD`, account status `1`, final trigger `FALSE`.
+- `python3.14 main.py --check-budget`: passed with real Meta reads for all 3 Budget Alert accounts; no Feishu alert was sent because all three accounts were above the 3-day threshold.
 - `python3.14 -c "import streamlit"`: failed in Codex shell because Streamlit is not installed in this environment; install with `pip install -r requirements.txt` in Windows CMD.
 - `git diff --check`: passed.
 - Real `python main.py --budget-manager-preview` was not run by Codex for this fix because it sends a Feishu preview; next validation should be run by the user in Windows CMD.

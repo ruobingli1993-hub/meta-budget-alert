@@ -46,7 +46,8 @@ class AccountBudgetSnapshot:
     threshold: Decimal
     account_spend_limit: Decimal
     amount_spent: Decimal
-    balance_source: str = "account_spend_limit - amount_spent"
+    account_status: str = "unknown"
+    balance_source: str = "spend_cap - amount_spent"
     threshold_days: Decimal = Decimal("3")
 
     @property
@@ -79,10 +80,10 @@ class MetaMarketingAPI:
     def get_budget_snapshot(self, account: AdAccount) -> AccountBudgetSnapshot:
         account_info = self._get_spend_limit_info(account)
         currency = str(account_info.get("currency") or "USD")
-        raw_limit = account_info.get("account_spend_limit")
+        raw_limit = account_info.get("spend_cap")
         if raw_limit in (None, "", "0", 0):
             raise MetaAPIError(
-                f"Account spend limit is unavailable for {account.name}; refusing to use the legacy balance field"
+                f"Spend cap is unavailable for {account.name}; refusing to use the legacy balance field"
             )
         spend_limit = self._parse_account_money(raw_limit, currency)
         amount_spent = self._parse_account_money(account_info.get("amount_spent"), currency)
@@ -100,6 +101,7 @@ class MetaMarketingAPI:
             threshold=threshold,
             account_spend_limit=spend_limit,
             amount_spent=amount_spent,
+            account_status=str(account_info.get("account_status") or "unknown"),
         )
 
     def get_account_balance(self, account: AdAccount) -> tuple[Decimal, str]:
@@ -110,7 +112,7 @@ class MetaMarketingAPI:
     def get_spend_limit_balance(self, account: AdAccount) -> tuple[Decimal | None, str]:
         account_info = self._get_spend_limit_info(account)
         currency = str(account_info.get("currency") or "USD")
-        raw_limit = account_info.get("account_spend_limit")
+        raw_limit = account_info.get("spend_cap")
         if raw_limit in (None, "", "0", 0):
             return None, currency
 
@@ -124,7 +126,7 @@ class MetaMarketingAPI:
             "GET",
             f"{self.base_url}/{account.api_id}",
             params={
-                "fields": "account_spend_limit,amount_spent,currency,account_status,timezone_name",
+                "fields": "spend_cap,amount_spent,currency,account_status,timezone_name",
                 "access_token": self.access_token,
             },
         )

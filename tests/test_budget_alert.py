@@ -30,13 +30,15 @@ class BudgetAlertTest(unittest.TestCase):
     def test_snapshot_uses_remaining_account_spend_limit(self) -> None:
         api = FakeBudgetAPI({
             "currency": "USD",
-            "account_spend_limit": "2000000",
+            "spend_cap": "2000000",
             "amount_spent": "1500000",
+            "account_status": "1",
         })
         snapshot = api.get_budget_snapshot(ACCOUNT)
         self.assertEqual(snapshot.account_spend_limit, Decimal("20000"))
         self.assertEqual(snapshot.amount_spent, Decimal("15000"))
         self.assertEqual(snapshot.current_balance, Decimal("5000"))
+        self.assertEqual(snapshot.account_status, "1")
 
     def test_alerts_at_three_day_threshold(self) -> None:
         snapshot = AccountBudgetSnapshot(
@@ -54,7 +56,7 @@ class BudgetAlertTest(unittest.TestCase):
 
     def test_missing_spend_limit_fails_closed(self) -> None:
         api = FakeBudgetAPI({"currency": "USD", "amount_spent": "1500000"})
-        with self.assertRaisesRegex(Exception, "Account spend limit is unavailable"):
+        with self.assertRaisesRegex(Exception, "Spend cap is unavailable"):
             api.get_budget_snapshot(ACCOUNT)
 
     def test_decision_blocks_duplicate_inside_24_hours(self) -> None:

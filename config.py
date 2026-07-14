@@ -43,9 +43,7 @@ ACCOUNT_CONFIGS: list[AccountConfig] = [
 ]
 
 
-ACCOUNTS: list[AdAccount] = [
-    account for account in ACCOUNT_CONFIGS if account.account_type == "performance"
-]
+ACCOUNTS: list[AdAccount] = ACCOUNT_CONFIGS
 REPORT_ACCOUNTS: list[ReportAccount] = ACCOUNT_CONFIGS
 
 

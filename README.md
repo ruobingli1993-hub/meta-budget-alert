@@ -97,8 +97,10 @@ This mode:
 Budget Alert and Budget Alert Debug use the same remaining spend limit calculation:
 
 ```text
-remaining_spend_limit = account_spend_limit - amount_spent
+remaining_spend_limit = spend_cap - amount_spent
 ```
+
+The Meta API field is `spend_cap`. The internal snapshot still maps it to `account_spend_limit` for compatibility.
 
 The debug output shows the spend cap, cumulative amount spent, remaining spend limit, last 7 complete days spend, average daily spend, estimated days remaining, threshold amount, previous alert state, de-duplication result, and final trigger reason.
 
@@ -127,7 +129,7 @@ python main.py --morning-report
 Morning Report 的 Balance 使用账户花费限额剩余额度：
 
 ```text
-account_spend_limit - amount_spent
+spend_cap - amount_spent
 ```
 
 如果 Meta API 没有返回账户花费限额，报告会显示：

@@ -353,8 +353,9 @@ def run_check_budget() -> int:
         print(f"Account Name: {account.name}")
         print(f"Account ID: {account.account_id}")
         print(f"Currency: {snapshot.currency}")
+        print(f"Account Status: {snapshot.account_status}")
         print(f"Balance Source: {snapshot.balance_source}")
-        print(f"Account Spend Limit: {money(snapshot.account_spend_limit, snapshot.currency)}")
+        print(f"Spend Cap: {money(snapshot.account_spend_limit, snapshot.currency)}")
         print(f"Cumulative Amount Spent: {money(snapshot.amount_spent, snapshot.currency)}")
         print(f"Remaining Spend Limit: {money(snapshot.current_balance, snapshot.currency)}")
         print(f"Last 7 Days Spend: {money(snapshot.seven_day_spend, snapshot.currency)}")
@@ -420,8 +421,10 @@ def run_check_budget_debug() -> int:
             continue
         decision = build_budget_alert_decision(snapshot, state)
         print(f"Currency: {snapshot.currency}")
-        print(f"account_spend_cap: {money(snapshot.account_spend_limit, snapshot.currency)}")
+        print(f"account_status: {snapshot.account_status}")
+        print(f"spend_cap: {money(snapshot.account_spend_limit, snapshot.currency)}")
         print(f"amount_spent: {money(snapshot.amount_spent, snapshot.currency)}")
+        print(f"remaining_balance: {money(snapshot.current_balance, snapshot.currency)}")
         print(f"remaining_spend_limit: {money(snapshot.current_balance, snapshot.currency)}")
         print(f"last_7_complete_days_spend: {money(snapshot.seven_day_spend, snapshot.currency)}")
         print(f"average_daily_spend: {money(snapshot.average_daily_spend, snapshot.currency)}")
@@ -448,8 +451,11 @@ def debug_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision
         "account_name": snapshot.account.name,
         "account_id": snapshot.account.account_id,
         "currency": snapshot.currency,
+        "account_status": snapshot.account_status,
+        "spend_cap": str(snapshot.account_spend_limit),
         "account_spend_cap": str(snapshot.account_spend_limit),
         "amount_spent": str(snapshot.amount_spent),
+        "remaining_balance": str(snapshot.current_balance),
         "remaining_spend_limit": str(snapshot.current_balance),
         "last_7_complete_days_spend": str(snapshot.seven_day_spend),
         "average_daily_spend": str(snapshot.average_daily_spend),
