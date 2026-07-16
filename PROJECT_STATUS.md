@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- P0 Feishu notification chain validation is in progress.
+- P0 Feishu notification chain validation is complete.
 - Budget Alert monitors three accounts, including Jelenew-Brand & Lab.
 - Budget Alert Debug is read-only and available for real-account checks.
 - Dashboard V1 is available as the detail and approval workspace.
@@ -27,7 +27,7 @@
 
 ## In Progress
 
-- P0 Feishu notification chain fix and validation
+- No active P0 development.
 
 ## Known Bugs
 
@@ -147,8 +147,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Current Work
 
-- P0 Feishu notification chain fix is in progress.
-- Scope: Budget Alert, scheduled reports, Feishu delivery, GitHub Actions scheduling, account timezone windows, and spend/balance accuracy.
+- P0 Feishu notification chain validation complete.
+- Budget Alert and all three scheduled reports were validated through GitHub Actions on commit `9090928318b4aa9c1cb25af6c0325ce14f4aa4c7`.
 
 ## Environment
 
@@ -288,3 +288,11 @@ Last checked: 2026-07-07 Asia/Shanghai
 - `state.json` remained unchanged during local compile/help verification.
 - Feishu webhook URL was not printed in logs.
 - Project Documentation V1 documentation-only update completed; no Python, Dashboard, Workflow, Budget Rule, or apply command was changed or run.
+- `python3.14 -m compileall main.py config.py meta_api.py notifier.py scheduled_reports.py meta_data_provider.py tests`: passed.
+- `python3.14 -m unittest discover -s tests`: passed, 46 tests.
+- `python3.14 main.py --check-budget-debug`: passed with real Meta reads for 3 accounts and did not modify `state.json`.
+- GitHub Actions Scheduled Report workflow_dispatch `morning`: passed and sent Feishu.
+- GitHub Actions Scheduled Report workflow_dispatch `daily-close`: passed and sent Feishu.
+- GitHub Actions Scheduled Report workflow_dispatch `early-pulse`: passed and sent Feishu.
+- GitHub Actions Budget Alert workflow_dispatch: passed. No Feishu budget alert was sent because all three accounts were above the 3-day threshold.
+- Budget Alert GitHub run used commit `9090928318b4aa9c1cb25af6c0325ce14f4aa4c7` and saved state cache key `meta-budget-alert-state-29485663810`.
