@@ -52,7 +52,7 @@ def build_report_plan(mode: ReportMode, account_timezone: str = "America/Phoenix
     local_time = beijing_time.astimezone(ZoneInfo(account_timezone))
     today = local_time.date()
     if mode == "morning":
-        current = PeriodSpec("today_same_time", today.isoformat(), today.isoformat(), "today", True)
+        current = PeriodSpec("today_same_time", today.isoformat(), today.isoformat(), includes_today=True)
         comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
         return ReportPlan(mode, "Meta Morning Realtime", "09:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "MEDIUM", "")
@@ -63,7 +63,7 @@ def build_report_plan(mode: ReportMode, account_timezone: str = "America/Phoenix
         comp30 = PeriodSpec("previous_30_complete_day_average", (yesterday - timedelta(days=30)).isoformat(), (yesterday - timedelta(days=1)).isoformat())
         return ReportPlan(mode, "Meta Daily Close", "15:30 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, False, "HIGH", "")
     if mode == "early-pulse":
-        current = PeriodSpec("early_pulse_same_time", today.isoformat(), today.isoformat(), "today", True)
+        current = PeriodSpec("early_pulse_same_time", today.isoformat(), today.isoformat(), includes_today=True)
         comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
         note = "当前仍处于广告日早期，仅用于监测启动情况，不建议依据当前 ROAS 做强调整。"
@@ -75,7 +75,10 @@ def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
     validate_config()
     provider = MetaDataProvider(MetaMarketingAPI())
     rows: list[AccountReportRow] = []
-    start = parse_as_of(as_of) if as_of else datetime.now(BEIJING_TZ)
+    actual_start = datetime.now(BEIJING_TZ)
+    # A delayed scheduler must not change the reporting date/window.  Anchor
+    # production runs to the slot they were meant to execute at.
+    start = parse_as_of(as_of) if as_of else scheduled_time(mode, actual_start)
     plan: ReportPlan | None = None
     for account in ACCOUNT_CONFIGS:
         try:
@@ -102,11 +105,20 @@ def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
         FeishuWebhookClient().send_text(message)
     except Exception as exc:
         send_result = type(exc).__name__
-        write_log(plan, rows, send_result)
+        write_log(plan, rows, send_result, actual_start)
         raise
-    write_log(plan, rows, send_result)
+    write_log(plan, rows, send_result, actual_start)
     print(f"Scheduled report sent: {mode}")
     return 0
+
+
+def scheduled_time(mode: ReportMode, observed_at: datetime) -> datetime:
+    observed = observed_at.astimezone(BEIJING_TZ)
+    hour, minute = {"morning": (9, 0), "daily-close": (15, 30), "early-pulse": (18, 0)}[mode]
+    scheduled = observed.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    # If a run is delayed past Beijing midnight, the latest occurrence of the
+    # slot belongs to the previous calendar day, not to a future slot today.
+    return scheduled if scheduled <= observed else scheduled - timedelta(days=1)
 
 
 def fetch_period(
@@ -212,10 +224,13 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
     lines = [
         plan.title,
         "",
-        f"Data as of: {plan.account_local_time.strftime('%Y-%m-%d %H:%M:%S %Z')} / Beijing {plan.beijing_time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Scheduled for: Beijing {plan.beijing_time.strftime('%Y-%m-%d %H:%M')}",
+        f"Data window: account date {plan.current_period.since}"
+        + (f" to {plan.current_period.until}" if plan.current_period.until != plan.current_period.since else "")
+        + (f", through hour {plan.account_local_time.hour:02d}:59 {plan.account_local_time.tzname()}" if plan.same_time_window else ", complete day"),
         f"Overall Status: {overall_status}",
         f"Data Confidence: {confidence}",
-        f"Total Spend: {money(total_spend)}",
+        f"Total Spend ({len(success)} accounts): {money(total_spend)}",
         f"Performance ROAS: {fmt_optional(perf_roas)}",
         f"Purchase: {fmt(total_purchase)}",
         f"CPA: {money(safe_div(perf_spend, perf_purchase))}",
@@ -346,17 +361,40 @@ def error_insight(account: ReportAccount, period: PeriodSpec, error: str) -> Ins
     )
 
 
-def write_log(plan: ReportPlan, rows: list[AccountReportRow], feishu_result: str) -> None:
+def write_log(plan: ReportPlan, rows: list[AccountReportRow], feishu_result: str, actual_start: datetime | None = None) -> None:
+    started_at = actual_start or datetime.now(BEIJING_TZ)
     payload: dict[str, Any] = {
+        "message_type": "scheduled_report",
         "created_at": datetime.now(BEIJING_TZ).isoformat(timespec="seconds"),
         "report_mode": plan.mode,
         "scheduled_slot": plan.scheduled_slot,
+        "planned_beijing_time": plan.beijing_time.isoformat(timespec="seconds"),
         "beijing_time": plan.beijing_time.isoformat(timespec="seconds"),
+        "actual_start": started_at.isoformat(timespec="seconds"),
+        "scheduler_delay_seconds": int((started_at - plan.beijing_time).total_seconds()),
         "account_local_time": plan.account_local_time.isoformat(timespec="seconds"),
+        "account_timezone": plan.account_local_time.tzname(),
+        "query_date": plan.current_period.since,
+        "cutoff_hour": plan.account_local_time.hour if plan.same_time_window else None,
         "data_range": {"since": plan.current_period.since, "until": plan.current_period.until, "date_preset": plan.current_period.date_preset},
         "comparison_range": {"7d": [plan.comparison_7d.since, plan.comparison_7d.until], "30d": [plan.comparison_30d.since, plan.comparison_30d.until]},
         "accounts_success": sum(1 for row in rows if row.current.data_status == "SUCCESS"),
         "accounts_failed": sum(1 for row in rows if row.current.data_status == "ERROR"),
+        "accounts": [
+            {
+                "account_name": row.account.name,
+                "account_id": row.account.account_id,
+                "timezone": row.current.timezone,
+                "currency": row.current.currency,
+                "query_since": row.current.since,
+                "query_until": row.current.until,
+                "raw_spend": row.current.raw_spend,
+                "spend": str(row.current.spend) if row.current.spend is not None else None,
+                "data_status": row.current.data_status,
+                "error": row.current.error,
+            }
+            for row in rows
+        ],
         "feishu_send_result": feishu_result,
         "dashboard_url_status": "configured" if os.getenv("DASHBOARD_URL") else "missing",
         "overall_status": overall_health(rows) if rows else "DATA_ERROR",

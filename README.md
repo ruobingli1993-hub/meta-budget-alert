@@ -192,6 +192,7 @@ Project documentation lives in the repository root:
 - `PROJECT_CONTEXT.md`: product vision, principles, modules, and roadmap focus.
 - `AI_MEMORY.md`: stable user preferences and AI collaboration rules.
 - `PROJECT_STATUS.md`: current status, completed work, active work, known bugs, next milestone, recent commits, and latest test notes.
+- `PROJECT_DASHBOARD.md`: one-page non-technical dashboard for product ownership.
 - `CHANGELOG.md`: date-based project change history.
 
 Recommended reading order for future Codex development:
@@ -199,8 +200,9 @@ Recommended reading order for future Codex development:
 1. `PROJECT_CONTEXT.md`
 2. `AI_MEMORY.md`
 3. `PROJECT_STATUS.md`
-4. `CHANGELOG.md`
-5. `README.md`
+4. `PROJECT_DASHBOARD.md`
+5. `CHANGELOG.md`
+6. `README.md`
 
 ## Meta Automation Dashboard V1
 

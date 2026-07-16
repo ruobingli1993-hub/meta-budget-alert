@@ -6,7 +6,8 @@ from decimal import Decimal
 
 from config import AccountConfig
 from meta_api import AccountBudgetSnapshot, MetaMarketingAPI
-from main import build_budget_alert_decision, update_account_state
+from meta_api import MetaAPIError
+from main import build_budget_alert_decision, run_check_budget_debug, update_account_state
 
 
 ACCOUNT = AccountConfig("Test", "123", "performance")
@@ -26,6 +27,11 @@ class FakeBudgetAPI(MetaMarketingAPI):
         return Decimal("700")
 
 
+class EmptySpendBudgetAPI(FakeBudgetAPI):
+    def _get_last_7_complete_days_spend(self, account, account_info):
+        raise MetaAPIError("Meta API returned no last 7 complete days spend rows for Test")
+
+
 class BudgetAlertTest(unittest.TestCase):
     def test_snapshot_uses_remaining_account_spend_limit(self) -> None:
         api = FakeBudgetAPI({
@@ -34,11 +40,13 @@ class BudgetAlertTest(unittest.TestCase):
             "amount_spent": "1500000",
             "account_status": "1",
         })
-        snapshot = api.get_budget_snapshot(ACCOUNT)
+        with unittest.mock.patch.object(api, "_account_today", return_value=datetime(2026, 7, 16).date()):
+            snapshot = api.get_budget_snapshot(ACCOUNT)
         self.assertEqual(snapshot.account_spend_limit, Decimal("20000"))
         self.assertEqual(snapshot.amount_spent, Decimal("15000"))
         self.assertEqual(snapshot.current_balance, Decimal("5000"))
         self.assertEqual(snapshot.account_status, "1")
+        self.assertEqual(snapshot.last_7_complete_days_range, {"since": "2026-07-09", "until": "2026-07-15"})
 
     def test_alerts_at_three_day_threshold(self) -> None:
         snapshot = AccountBudgetSnapshot(
@@ -57,6 +65,15 @@ class BudgetAlertTest(unittest.TestCase):
     def test_missing_spend_limit_fails_closed(self) -> None:
         api = FakeBudgetAPI({"currency": "USD", "amount_spent": "1500000"})
         with self.assertRaisesRegex(Exception, "Spend cap is unavailable"):
+            api.get_budget_snapshot(ACCOUNT)
+
+    def test_empty_last_7_days_spend_fails_closed(self) -> None:
+        api = EmptySpendBudgetAPI({
+            "currency": "USD",
+            "spend_cap": "2000000",
+            "amount_spent": "1500000",
+        })
+        with self.assertRaisesRegex(Exception, "no last 7 complete days spend rows"):
             api.get_budget_snapshot(ACCOUNT)
 
     def test_decision_blocks_duplicate_inside_24_hours(self) -> None:
@@ -110,6 +127,22 @@ class BudgetAlertTest(unittest.TestCase):
         update_account_state(state, snapshot, alert_sent=False)
         self.assertFalse(state["accounts"][ACCOUNT.account_id]["alerting"])
         self.assertNotIn("last_alert_sent_at", state["accounts"][ACCOUNT.account_id])
+
+    def test_debug_mode_does_not_send_or_save_state(self) -> None:
+        with unittest.mock.patch("main.META_ACCESS_TOKEN", "token"), \
+            unittest.mock.patch("main.MetaMarketingAPI", return_value=FakeBudgetAPI({
+                "currency": "USD",
+                "spend_cap": "2000000",
+                "amount_spent": "1500000",
+            })), \
+            unittest.mock.patch("main.load_state", return_value={"accounts": {}}) as load_state, \
+            unittest.mock.patch("main.save_state") as save_state, \
+            unittest.mock.patch("main.FeishuWebhookClient") as feishu, \
+            unittest.mock.patch("main.append_budget_alert_debug_log"):
+            self.assertEqual(run_check_budget_debug(), 0)
+        load_state.assert_called_once()
+        save_state.assert_not_called()
+        feishu.assert_not_called()
 
 
 if __name__ == "__main__":

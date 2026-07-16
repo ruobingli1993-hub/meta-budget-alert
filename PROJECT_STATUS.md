@@ -2,9 +2,9 @@
 
 ## Current Status
 
-- Project Documentation V1 is initialized.
+- P0 Feishu notification chain validation is in progress.
 - Budget Alert monitors three accounts, including Jelenew-Brand & Lab.
-- Budget Alert Debug is the current P0 operational focus.
+- Budget Alert Debug is read-only and available for real-account checks.
 - Dashboard V1 is available as the detail and approval workspace.
 - Feishu is kept as a summary-only notification channel.
 - No budget apply has been executed.
@@ -27,8 +27,7 @@
 
 ## In Progress
 
-- P0 Budget Alert Debug validation and operational hardening
-- P1 Dashboard V2 planning
+- P0 Feishu notification chain fix and validation
 
 ## Known Bugs
 
@@ -148,8 +147,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Current Work
 
-- Project Documentation V1 initialized.
-- No active feature development.
+- P0 Feishu notification chain fix is in progress.
+- Scope: Budget Alert, scheduled reports, Feishu delivery, GitHub Actions scheduling, account timezone windows, and spend/balance accuracy.
 
 ## Environment
 

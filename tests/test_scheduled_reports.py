@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import unittest
 from datetime import datetime
 from decimal import Decimal
@@ -10,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from config import AccountConfig
 from meta_data_provider import AccountMeta, InsightRecord, PeriodSpec
-from scheduled_reports import AccountReportRow, build_report_plan, format_report, judge_account, parse_as_of
+from scheduled_reports import AccountReportRow, build_report_plan, format_report, judge_account, parse_as_of, scheduled_time, write_log
 
 
 PERF = AccountConfig("Performance", "1", "performance")
@@ -56,7 +57,7 @@ class ScheduledReportsTest(unittest.TestCase):
     def test_morning_uses_same_time_window(self) -> None:
         plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 10, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
         self.assertTrue(plan.same_time_window)
-        self.assertEqual(plan.current_period.date_preset, "today")
+        self.assertIsNone(plan.current_period.date_preset)
         self.assertEqual(plan.account_local_time.hour, 18)
         self.assertEqual(plan.comparison_7d.since, "2026-07-02")
 
@@ -143,6 +144,67 @@ class ScheduledReportsTest(unittest.TestCase):
     def test_as_of_parses_offset_datetime(self) -> None:
         parsed = parse_as_of("2026-07-10T18:00:00-07:00")
         self.assertEqual(parsed.astimezone(ZoneInfo("America/Phoenix")).hour, 18)
+
+    def test_delayed_run_is_anchored_to_scheduled_slot(self) -> None:
+        observed = datetime(2026, 7, 15, 23, 13, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+        self.assertEqual(scheduled_time("early-pulse", observed).isoformat(), "2026-07-15T18:00:00+08:00")
+        after_midnight = datetime(2026, 7, 16, 0, 13, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+        self.assertEqual(scheduled_time("early-pulse", after_midnight).isoformat(), "2026-07-15T18:00:00+08:00")
+
+    def test_expected_windows_for_july_16_beijing_slots(self) -> None:
+        tz = ZoneInfo("Asia/Shanghai")
+        morning = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 16, 9, 0, tzinfo=tz))
+        close = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 16, 15, 30, tzinfo=tz))
+        pulse = build_report_plan("early-pulse", "America/Phoenix", datetime(2026, 7, 16, 18, 0, tzinfo=tz))
+        self.assertEqual((morning.current_period.since, morning.account_local_time.hour), ("2026-07-15", 18))
+        self.assertEqual((close.current_period.since, close.current_period.until), ("2026-07-15", "2026-07-15"))
+        self.assertEqual((pulse.current_period.since, pulse.account_local_time.hour), ("2026-07-16", 3))
+
+    def test_report_labels_total_as_multi_account_and_fixed_window(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 16, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        rows = [AccountReportRow(PERF, META, record(PERF), None, None, "HEALTHY", "ok")]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-16T09:00:00"
+            text = format_report(plan, rows)
+        self.assertIn("Data window: account date 2026-07-15, complete day", text)
+        self.assertIn("Total Spend (1 accounts): $100.00", text)
+
+    def test_multi_account_total_matches_account_spend_lines(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 16, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        rows = [
+            AccountReportRow(PERF, META, record(PERF, spend="100"), None, None, "HEALTHY", "ok"),
+            AccountReportRow(AccountConfig("Performance 2", "3", "performance"), META, record(AccountConfig("Performance 2", "3", "performance"), spend="50"), None, None, "HEALTHY", "ok"),
+            AccountReportRow(BRAND, META, record(BRAND, spend="25", purchase="0", value="0"), None, None, "HEALTHY", "ok"),
+        ]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-16T09:00:00"
+            text = format_report(plan, rows)
+        self.assertIn("Total Spend (3 accounts): $175.00", text)
+        self.assertIn("Performance: HEALTHY | Spend $100.00", text)
+        self.assertIn("Performance 2: HEALTHY | Spend $50.00", text)
+        self.assertIn("Brand: HEALTHY | Spend $25.00", text)
+
+    def test_scheduled_report_log_contains_delivery_and_account_spend_fields(self) -> None:
+        plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 16, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        current = record(PERF, spend="123")
+        current = InsightRecord(**{**current.__dict__, "raw_spend": "123"})
+        rows = [AccountReportRow(PERF, META, current, None, None, "HEALTHY", "ok")]
+        with patch("scheduled_reports.SCHEDULED_REPORT_LOG", Path("logs/test_scheduled_reports.log")) as fake_path:
+            if fake_path.exists():
+                fake_path.unlink()
+            write_log(plan, rows, "SUCCESS", datetime(2026, 7, 16, 9, 2, 5, tzinfo=ZoneInfo("Asia/Shanghai")))
+            payload = json.loads(fake_path.read_text(encoding="utf-8").strip())
+            fake_path.unlink()
+        self.assertEqual(payload["message_type"], "scheduled_report")
+        self.assertEqual(payload["scheduler_delay_seconds"], 125)
+        self.assertEqual(payload["query_date"], "2026-07-15")
+        self.assertEqual(payload["cutoff_hour"], 18)
+        self.assertEqual(payload["accounts"][0]["raw_spend"], "123")
+        self.assertEqual(payload["feishu_send_result"], "SUCCESS")
 
     def test_github_cron_and_dispatch(self) -> None:
         workflow = Path(".github/workflows/scheduled_reports.yml").read_text(encoding="utf-8")

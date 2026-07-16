@@ -13,28 +13,28 @@ def money(value: Decimal, currency: str) -> str:
 
 
 def build_alert_message(snapshot: AccountBudgetSnapshot) -> str:
-    account = snapshot.account
+    days = (
+        f"{snapshot.estimated_days_remaining:.2f}"
+        if snapshot.estimated_days_remaining is not None
+        else "N/A"
+    )
     return "\n".join(
         [
-            "【Meta广告预算预警】",
+            "Meta Budget Alert",
             "",
-            "账户：",
-            account.name,
+            f"Account: {snapshot.account.name}",
+            f"Account ID: {snapshot.account.account_id}",
+            f"Currency: {snapshot.currency}",
+            f"Account Status: {snapshot.account_status}",
+            f"Spend Cap: {money(snapshot.account_spend_limit, snapshot.currency)}",
+            f"Amount Spent: {money(snapshot.amount_spent, snapshot.currency)}",
+            f"Current Balance: {money(snapshot.current_balance, snapshot.currency)}",
+            f"Last 7 Complete Days Avg Daily Spend: {money(snapshot.average_daily_spend, snapshot.currency)}",
+            f"3-Day Threshold: {money(snapshot.threshold, snapshot.currency)}",
+            f"Estimated Days Remaining: {days}",
             "",
-            "账户ID：",
-            account.account_id,
-            "",
-            "当前余额：",
-            money(snapshot.current_balance, snapshot.currency),
-            "",
-            "过去7天平均日花费：",
-            money(snapshot.average_daily_spend, snapshot.currency),
-            "",
-            "预警阈值（3天）：",
-            money(snapshot.threshold, snapshot.currency),
-            "",
-            "状态：",
-            "⚠ 当前余额已低于过去7天平均日花费的3倍，请及时充值。",
+            "Trigger Reason: Current balance is at or below the estimated 3-day spend threshold.",
+            "Action: Please recharge this Meta ad account.",
         ]
     )
 

@@ -47,6 +47,8 @@ class AccountBudgetSnapshot:
     account_spend_limit: Decimal
     amount_spent: Decimal
     account_status: str = "unknown"
+    account_timezone: str = "UTC"
+    last_7_complete_days_range: dict[str, str] | None = None
     balance_source: str = "spend_cap - amount_spent"
     threshold_days: Decimal = Decimal("3")
 
@@ -88,6 +90,7 @@ class MetaMarketingAPI:
         spend_limit = self._parse_account_money(raw_limit, currency)
         amount_spent = self._parse_account_money(account_info.get("amount_spent"), currency)
         balance = max(spend_limit - amount_spent, Decimal("0"))
+        last_7_range = self._last_7_complete_days_range(account_info)
         seven_day_spend = self._get_last_7_complete_days_spend(account, account_info)
         average_daily_spend = seven_day_spend / Decimal("7")
         threshold = average_daily_spend * Decimal("3")
@@ -102,6 +105,8 @@ class MetaMarketingAPI:
             account_spend_limit=spend_limit,
             amount_spent=amount_spent,
             account_status=str(account_info.get("account_status") or "unknown"),
+            account_timezone=str(account_info.get("timezone_name") or "UTC"),
+            last_7_complete_days_range=last_7_range,
         )
 
     def get_account_balance(self, account: AdAccount) -> tuple[Decimal, str]:
@@ -173,11 +178,7 @@ class MetaMarketingAPI:
         )
 
     def _get_last_7_complete_days_spend(self, account: AdAccount, account_info: dict[str, Any]) -> Decimal:
-        today = self._account_today(account_info.get("timezone_name"))
-        time_range = {
-            "since": (today - timedelta(days=7)).isoformat(),
-            "until": (today - timedelta(days=1)).isoformat(),
-        }
+        time_range = self._last_7_complete_days_range(account_info)
         response = self._request(
             "GET",
             f"{self.base_url}/{account.api_id}/insights",
@@ -190,12 +191,19 @@ class MetaMarketingAPI:
 
         rows = response.get("data", [])
         if not rows:
-            return Decimal("0")
+            raise MetaAPIError(f"Meta API returned no last 7 complete days spend rows for {account.name}")
 
         total = Decimal("0")
         for row in rows:
             total += self._decimal(row.get("spend", "0"))
         return total
+
+    def _last_7_complete_days_range(self, account_info: dict[str, Any]) -> dict[str, str]:
+        today = self._account_today(account_info.get("timezone_name"))
+        return {
+            "since": (today - timedelta(days=7)).isoformat(),
+            "until": (today - timedelta(days=1)).isoformat(),
+        }
 
     def _get_last_7_days_spend(self, account: AdAccount) -> Decimal:
         return self._get_last_7_complete_days_spend(account, self._get_spend_limit_info(account))

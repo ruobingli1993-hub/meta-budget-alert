@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from config import (
     ACCOUNTS,
@@ -35,7 +36,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 DEBUG_LOG_FILE = Path("logs/budget_alert_debug.log")
+BUDGET_ALERT_LOG_FILE = Path("logs/budget_alert.log")
 REPEAT_ALERT_AFTER = timedelta(hours=24)
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -329,13 +332,16 @@ def run_meta_test() -> int:
 def run_check_budget() -> int:
     validate_config()
 
+    run_start = datetime.now(BEIJING_TZ)
     state = load_state(STATE_FILE)
     api = MetaMarketingAPI()
     notifier = BudgetAlertNotifier(FeishuWebhookClient())
     had_error = False
-    alert_sent = False
+    any_alert_sent = False
+    state_updated = False
 
     for account in ACCOUNTS:
+        account_alert_sent = False
         try:
             snapshot = api.get_budget_snapshot(account)
         except MetaAPIError as exc:
@@ -345,6 +351,20 @@ def run_check_budget() -> int:
             print(f"HTTP Status Code: {exc.http_status_code or 'unavailable'}")
             print(f"Meta Error Code: {exc.meta_error_code or 'unavailable'}")
             print(f"Error Message: {exc}")
+            append_budget_alert_log(
+                {
+                    **budget_alert_run_context(run_start),
+                    "message_type": "budget_alert",
+                    "account_name": account.name,
+                    "account_id": account.account_id,
+                    "data_status": "ERROR",
+                    "http_status_code": exc.http_status_code,
+                    "meta_error_code": exc.meta_error_code,
+                    "error": str(exc),
+                    "feishu_send_result": "NOT_SENT",
+                    "state_json_updated": False,
+                }
+            )
             continue
 
         decision = build_budget_alert_decision(snapshot, state)
@@ -373,17 +393,33 @@ def run_check_budget() -> int:
                 print("---")
                 print(f"Account Name: {account.name}")
                 print(f"Error Message: {exc}")
+                append_budget_alert_log(log_payload(snapshot, decision, "ERROR", False, run_start))
                 continue
-            alert_sent = True
+            account_alert_sent = True
+            any_alert_sent = True
             print(f"Alert sent: {account.name}")
         else:
             print(f"Trigger Reason: {decision.final_reason}")
 
-        update_account_state(state, snapshot, alert_sent)
+        update_account_state(state, snapshot, account_alert_sent)
+        state_updated = True
+        append_budget_alert_log(log_payload(snapshot, decision, "SENT" if account_alert_sent else "NOT_SENT", True, run_start))
 
-    save_state(STATE_FILE, state)
+    if state_updated:
+        save_state(STATE_FILE, state)
 
-    if not alert_sent and not had_error:
+    append_budget_alert_log(
+        {
+            **budget_alert_run_context(run_start),
+            "message_type": "budget_alert_summary",
+            "accounts_checked": len(ACCOUNTS),
+            "had_error": had_error,
+            "any_alert_sent": any_alert_sent,
+            "state_json_updated": state_updated,
+        }
+    )
+
+    if not any_alert_sent and not had_error:
         print("No alert needed")
 
     return 1 if had_error else 0
@@ -422,6 +458,8 @@ def run_check_budget_debug() -> int:
         decision = build_budget_alert_decision(snapshot, state)
         print(f"Currency: {snapshot.currency}")
         print(f"account_status: {snapshot.account_status}")
+        print(f"account_timezone: {snapshot.account_timezone}")
+        print(f"last_7_complete_days_range: {snapshot.last_7_complete_days_range}")
         print(f"spend_cap: {money(snapshot.account_spend_limit, snapshot.currency)}")
         print(f"amount_spent: {money(snapshot.amount_spent, snapshot.currency)}")
         print(f"remaining_balance: {money(snapshot.current_balance, snapshot.currency)}")
@@ -452,6 +490,8 @@ def debug_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision
         "account_id": snapshot.account.account_id,
         "currency": snapshot.currency,
         "account_status": snapshot.account_status,
+        "account_timezone": snapshot.account_timezone,
+        "last_7_complete_days_range": snapshot.last_7_complete_days_range,
         "spend_cap": str(snapshot.account_spend_limit),
         "account_spend_cap": str(snapshot.account_spend_limit),
         "amount_spent": str(snapshot.amount_spent),
@@ -464,6 +504,57 @@ def debug_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision
         "threshold_amount": str(snapshot.threshold),
         **asdict(decision),
     }
+
+
+def budget_alert_run_context(actual_start: datetime) -> dict[str, Any]:
+    observed = actual_start.astimezone(BEIJING_TZ)
+    scheduled = observed.replace(hour=9, minute=0, second=0, microsecond=0)
+    if scheduled > observed:
+        scheduled = scheduled - timedelta(days=1)
+    return {
+        "planned_beijing_time": scheduled.isoformat(timespec="seconds"),
+        "actual_start": observed.isoformat(timespec="seconds"),
+        "scheduler_delay_seconds": int((observed - scheduled).total_seconds()),
+    }
+
+
+def log_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision, feishu_result: str, state_updated: bool, actual_start: datetime) -> dict[str, Any]:
+    return {
+        **budget_alert_run_context(actual_start),
+        "message_type": "budget_alert",
+        "account_name": snapshot.account.name,
+        "account_id": snapshot.account.account_id,
+        "currency": snapshot.currency,
+        "account_timezone": snapshot.account_timezone,
+        "query_date_range": snapshot.last_7_complete_days_range,
+        "raw_spend": str(snapshot.seven_day_spend),
+        "current_balance": str(snapshot.current_balance),
+        "average_daily_spend": str(snapshot.average_daily_spend),
+        "estimated_days_remaining": str(snapshot.estimated_days_remaining) if snapshot.estimated_days_remaining is not None else None,
+        "threshold_amount": str(snapshot.threshold),
+        "trigger_by_days": decision.trigger_by_days,
+        "trigger_by_amount": decision.trigger_by_amount,
+        "final_trigger": decision.final_trigger,
+        "de_duplication_would_block": decision.de_duplication_would_block,
+        "final_reason": decision.final_reason,
+        "feishu_send_result": feishu_result,
+        "state_json_updated": state_updated,
+    }
+
+
+def append_budget_alert_log(payload: dict[str, Any]) -> None:
+    BUDGET_ALERT_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    clean = {
+        key: value
+        for key, value in payload.items()
+        if key.lower() not in {"meta_access_token", "feishu_webhook_url", "authorization"}
+        and "url" not in key.lower()
+        and "token" not in key.lower()
+        and "webhook" not in key.lower()
+    }
+    clean["created_at"] = datetime.now().isoformat(timespec="seconds")
+    with BUDGET_ALERT_LOG_FILE.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(clean, ensure_ascii=False) + "\n")
 
 
 def append_budget_alert_debug_log(payload: dict[str, Any]) -> None:

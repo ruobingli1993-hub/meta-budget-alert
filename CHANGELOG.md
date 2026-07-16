@@ -31,3 +31,22 @@ Format:
 ### Fixed
 
 - No code fixes in this documentation-only change.
+
+## 2026-07-16
+
+### Added
+
+- Added product-facing `PROJECT_DASHBOARD.md`.
+- Added unified Budget Alert delivery logs.
+- Added scheduled report delivery and account spend log fields.
+
+### Changed
+
+- Budget Alert state updates are now handled per account.
+- Scheduled reports keep their planned Beijing slot when GitHub Actions runs late.
+- Scheduled report Feishu summaries now label total spend by account count.
+
+### Fixed
+
+- Fixed Budget Alert cross-account state update risk.
+- Fixed Budget Alert last-7-days empty insight handling so empty data does not become zero spend.
