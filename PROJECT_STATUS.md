@@ -38,10 +38,8 @@
 
 ## Next Milestone
 
-- Finish Budget Alert operational validation.
-- Then move to Dashboard V2.
-- Later add Weekly Report.
-- Keep Budget Apply behind preview, approval, explicit confirmation, verification, and rollback.
+- Complete Budget Alert operational validation using read-only Debug.
+- Do not run real Budget Apply as part of this validation.
 
 ## Recent Commits
 
@@ -147,7 +145,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Current Work
 
-- P0 Feishu notification chain validation complete.
+- No active P0 development.
+- The single next task is Budget Alert operational validation.
 - Budget Alert and all three scheduled reports were validated through GitHub Actions on commit `9090928318b4aa9c1cb25af6c0325ce14f4aa4c7`.
 
 ## Environment
@@ -170,25 +169,8 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Run `python main.py --check-budget-debug` in Windows CMD to inspect why a low remaining spend limit may not send Feishu.
-- Review `logs/budget_alert_debug.log` after the debug run.
-- Run `python main.py --budget-manager-preview` in Windows CMD and review the Feishu preview.
-- Run `python main.py --morning-report` in Windows CMD before preview and compare Today Spend / Purchase / ROAS for the same account across both outputs.
-- Start Dashboard locally with `streamlit run dashboard/app.py`.
-- Review and record Budget Manager Preview decisions in Dashboard before any future apply step.
-- Manually test scheduled reports in Windows CMD:
-  - `python main.py --scheduled-report morning`
-  - `python main.py --scheduled-report daily-close`
-  - `python main.py --scheduled-report early-pulse`
-- Test report time windows locally with:
-  - `python main.py --scheduled-report morning --as-of "2026-07-10T18:00:00-07:00"`
-  - `python main.py --scheduled-report early-pulse --as-of "2026-07-10T03:00:00-07:00"`
-- Review `logs/budget_manager.log` and `logs/budget_runs/<RUN_ID>.md` after preview.
-- Review `logs/meta_data_provider.log` for unified request/debug data.
-- Review `logs/scheduled_reports.log` after scheduled report tests.
-- Do not run `--budget-manager-apply` until preview is confirmed.
-- After report format validation, push the committed changes to GitHub.
-- Later phase: implement the 18:00 complete yesterday report plus today's real-time data.
+- Complete the read-only Budget Alert operational validation defined in `CURRENT_TASK.md`.
+- Do not run `--budget-manager-apply` or any real advertising write operation.
 
 ## Unresolved Issues
 

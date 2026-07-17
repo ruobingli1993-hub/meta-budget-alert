@@ -14,6 +14,24 @@ Format:
 ### Fixed
 ```
 
+## 2026-07-17
+
+### Added
+
+- Added root `AGENTS.md` with project collaboration rules and advertising-operation safety boundaries.
+- Added `CURRENT_TASK.md` as the single source for the next task: Budget Alert operational validation.
+
+### Changed
+
+- Rebuilt `PROJECT_DASHBOARD.md` as readable UTF-8 Chinese.
+- Aligned `PROJECT_STATUS.md`, `CURRENT_TASK.md`, `PROJECT_DASHBOARD.md`, `PROJECT_CONTEXT.md`, and this changelog around no active P0 development and one next task.
+
+### Fixed
+
+- Removed stale Dashboard state that showed completed Feishu validation work as still in progress.
+- This documentation-governance change does not modify code, GitHub Actions, advertising rules, account configuration, or budget execution logic.
+- No real advertising operation or Budget Apply was executed.
+
 ## 2026-07-14
 
 ### Added

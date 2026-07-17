@@ -33,10 +33,9 @@ AI analysis
 
 ## Current Development Focus
 
-- P0 Budget Alert Debug
-- P1 Dashboard V2
-- P2 Weekly Report
-- P3 Budget Apply
+- No active P0 development.
+- The single next task is Budget Alert operational validation.
+- Budget Apply remains outside the current task and requires explicit approval.
 
 ## Operating Model
 
