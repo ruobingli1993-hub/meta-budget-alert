@@ -33,8 +33,9 @@ AI analysis
 
 ## Current Development Focus
 
-- No active P0 development.
-- The single next task is Budget Alert operational validation.
+- The single active P0 is Weekly Report Automation V1 because a real weekly report must be delivered this week.
+- Budget Alert is conditionally accepted and remains under production observation until a natural real alert is delivered correctly.
+- GitHub Actions scheduling latency remains an unresolved reliability risk.
 - Budget Apply remains outside the current task and requires explicit approval.
 
 ## Operating Model

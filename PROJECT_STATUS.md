@@ -3,8 +3,14 @@
 ## Current Status
 
 - P0 Feishu notification chain validation is complete.
+- The single active P0 is Weekly Report Automation V1.
 - Budget Alert monitors three accounts, including Jelenew-Brand & Lab.
 - Budget Alert Debug is read-only and available for real-account checks.
+- Budget Alert is conditionally accepted: non-trigger behavior and read-only logic are verified; natural end-to-end alert delivery remains under production observation.
+- GitHub Actions scheduling latency of up to 8+ hours is an unresolved reliability risk.
+- Weekly Report V1 input samples and core business rules have been collected and frozen in `WEEKLY_REPORT_V1_REQUIREMENTS.md`.
+- Weekly Report V1 is file-only and does not send Feishu messages.
+- Weekly Report V1 core implementation generated and validated W27 outputs from the real desktop input set.
 - Dashboard V1 is available as the detail and approval workspace.
 - Feishu is kept as a summary-only notification channel.
 - No budget apply has been executed.
@@ -27,7 +33,7 @@
 
 ## In Progress
 
-- No active P0 development.
+- Weekly Report Automation V1 implementation is complete; business content and layout review is pending.
 
 ## Known Bugs
 
@@ -38,7 +44,8 @@
 
 ## Next Milestone
 
-- Complete Budget Alert operational validation using read-only Debug.
+- Deliver one real Weekly Report V1 using real Meta data.
+- Keep a manual generation path so GitHub scheduling latency does not block this week's delivery.
 - Do not run real Budget Apply as part of this validation.
 
 ## Recent Commits
@@ -145,8 +152,10 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Current Work
 
-- No active P0 development.
-- The single next task is Budget Alert operational validation.
+- Weekly Report Automation V1 core implementation and real-data file generation are complete.
+- The next step is business review of the three W27 output files.
+- Budget Alert natural-trigger delivery remains under production observation.
+- Scheduling reliability remediation is planned separately and must target completion within 30 minutes of the planned time.
 - Budget Alert and all three scheduled reports were validated through GitHub Actions on commit `9090928318b4aa9c1cb25af6c0325ce14f4aa4c7`.
 
 ## Environment
@@ -169,11 +178,16 @@ After each completed development task, bug fix, or new feature, update this file
 
 ## Suggested Next Steps
 
-- Complete the read-only Budget Alert operational validation defined in `CURRENT_TASK.md`.
+- Review and accept the three W27 output files generated under `outputs/weekly_report/W27-live`.
+- Use `WEEKLY_REPORT_V1_REQUIREMENTS.md` as the development and acceptance source of truth.
+- Confirm Brand account reporting rules and Creative Analysis thresholds with “03｜广告分析 & 规则优化”.
+- Follow `SCHEDULING_RELIABILITY_PLAN.md` without blocking manual weekly-report delivery.
 - Do not run `--budget-manager-apply` or any real advertising write operation.
 
 ## Unresolved Issues
 
+- GitHub Actions scheduled runs can be delayed by 8 hours or more; the production target is completion within 30 minutes of the planned time.
+- A natural low-balance Budget Alert has not yet completed end-to-end production validation because no monitored account is currently within the alert range.
 - The default `python`, `py`, and `python3` launchers in this Windows environment point to Windows Apps stubs and are not usable here.
 - The Codex shell blocks outbound socket connections, but Windows CMD real-environment validation passed.
 - Local git commit created for GitHub Actions workflow configuration.

@@ -301,6 +301,27 @@ GitHub Actions workflow:
 .github/workflows/scheduled_reports.yml
 ```
 
+## Weekly Report V1
+
+Weekly Report V1 reads the prepared Google, BI, and Meta files, then uses read-only Meta API calls for account and creative data. It generates local files only and never sends Feishu messages.
+
+```powershell
+python weekly_report.py `
+  --input-dir "C:\Users\shzhe\Desktop\Weekly_Report_V1_Input" `
+  --output-dir "outputs\weekly_report\W27-live" `
+  --since 2026-07-05 `
+  --until 2026-07-11 `
+  --week-label W27
+```
+
+Generated files:
+
+- `Weekly_Report.xlsx`
+- `Creative_Report.html`
+- `Review_Required.xlsx`
+
+Use `--offline` to validate spreadsheet processing without calling Meta API. Offline mode marks unavailable account or creative data for review instead of treating it as zero.
+
 ## GitHub Actions
 
 仓库已包含 GitHub Actions workflow：
