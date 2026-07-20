@@ -10,7 +10,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from config import ACCOUNT_CONFIGS, ReportAccount, validate_config
-from dashboard.data_loader import dashboard_summary, load_preview
+from dashboard.data_loader import load_preview  # retained for test/backward-compatible patch points
 from feishu import FeishuWebhookClient
 from meta_api import MetaMarketingAPI
 from meta_data_provider import AccountMeta, InsightRecord, MetaDataProvider, PeriodSpec, decimal_or_zero, sum_records
@@ -293,15 +293,13 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
     perf_purchase = sum((decimal_or_zero(row.current.purchase) for row in perf), Decimal("0"))
     perf_revenue = sum_purchase_value(perf)
     perf_roas = safe_div(perf_revenue, perf_spend)
-    # Brand is upper-funnel and has no account-level Purchase ROAS judgment,
-    # but its spend belongs in the blended business ROI denominator.
-    overall_roi = safe_div(perf_revenue, total_spend)
+    # Brand remains excluded from account-level Purchase ROAS judgment, while
+    # both its Purchase Value and Spend belong in the blended business ROI.
+    overall_revenue = sum_purchase_value(success)
+    overall_roi = safe_div(overall_revenue, total_spend)
     impressions = sum((decimal_or_zero(row.current.impressions) for row in success), Decimal("0"))
     clicks = sum((decimal_or_zero(row.current.clicks) for row in success), Decimal("0"))
     overall_status = overall_report_status(rows, confidence, perf_roas)
-    preview = load_preview()
-    review = dashboard_summary(preview)
-    dashboard_url = os.getenv("DASHBOARD_URL") or "Dashboard URL not configured"
     lines = [
         plan.title,
         "",
@@ -321,16 +319,6 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
         "Accounts:",
     ]
     lines.extend(account_line(row) for row in rows)
-    lines.extend(
-        [
-            "",
-            f"Review RUN_ID: {preview.run_id or 'N/A'}",
-            f"Review data generated at: {preview.created_at or 'N/A'}",
-            f"Pending: {review['pending']} | High Risk: {review['high_risk']} | Data Error: {review['data_error']}",
-            "",
-            f"View Dashboard: {dashboard_url}",
-        ]
-    )
     return "\n".join(lines)
 
 
