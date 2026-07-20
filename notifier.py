@@ -24,10 +24,6 @@ def build_alert_message(snapshot: AccountBudgetSnapshot) -> str:
             "",
             f"Account: {snapshot.account.name}",
             f"Account ID: {snapshot.account.account_id}",
-            f"Currency: {snapshot.currency}",
-            f"Account Status: {snapshot.account_status}",
-            f"Spend Cap: {money(snapshot.account_spend_limit, snapshot.currency)}",
-            f"Amount Spent: {money(snapshot.amount_spent, snapshot.currency)}",
             f"Current Balance: {money(snapshot.current_balance, snapshot.currency)}",
             f"Last 7 Complete Days Avg Daily Spend: {money(snapshot.average_daily_spend, snapshot.currency)}",
             f"3-Day Threshold: {money(snapshot.threshold, snapshot.currency)}",
@@ -43,5 +39,5 @@ class BudgetAlertNotifier:
     def __init__(self, feishu_client: FeishuWebhookClient) -> None:
         self.feishu_client = feishu_client
 
-    def send_budget_alert(self, snapshot: AccountBudgetSnapshot) -> None:
-        self.feishu_client.send_text(build_alert_message(snapshot))
+    def send_budget_alert(self, snapshot: AccountBudgetSnapshot) -> dict[str, object]:
+        return self.feishu_client.send_text(build_alert_message(snapshot))

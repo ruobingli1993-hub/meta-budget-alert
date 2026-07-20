@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -334,6 +335,25 @@ def run_check_budget() -> int:
 
     run_start = datetime.now(BEIJING_TZ)
     state = load_state(STATE_FILE)
+    try:
+        save_state(STATE_FILE, state)
+        if load_state(STATE_FILE) != state:
+            raise RuntimeError("State persistence verification mismatch")
+    except Exception as exc:
+        print(f"State persistence preflight failed: {type(exc).__name__}")
+        append_budget_alert_log({**budget_alert_run_context(run_start), "message_type": "budget_alert_summary", "account_result": "STATE_ERROR", "send_result": "NOT_ATTEMPTED", "error": type(exc).__name__})
+        return 1
+    if os.getenv("BUDGET_ALERT_TRIGGER") == "recovery":
+        last_success_raw = state.get("last_successful_check_at")
+        if last_success_raw:
+            try:
+                last_success = datetime.fromisoformat(str(last_success_raw)).astimezone(BEIJING_TZ)
+            except ValueError:
+                last_success = None
+            if last_success and run_start - last_success < timedelta(minutes=60):
+                append_budget_alert_log({**budget_alert_run_context(run_start), "message_type": "budget_alert_summary", "account_result": "RECOVERY_NOT_NEEDED", "send_result": "NOT_SENT", "last_successful_check_at": last_success.isoformat(timespec="seconds")})
+                print("Recovery not needed: primary completed successfully")
+                return 0
     api = MetaMarketingAPI()
     notifier = BudgetAlertNotifier(FeishuWebhookClient())
     had_error = False
@@ -342,6 +362,8 @@ def run_check_budget() -> int:
 
     for account in ACCOUNTS:
         account_alert_sent = False
+        delivery: dict[str, Any] | None = None
+        state_prepared_for_send = False
         try:
             snapshot = api.get_budget_snapshot(account)
         except MetaAPIError as exc:
@@ -386,10 +408,28 @@ def run_check_budget() -> int:
         print(f"Trigger Result: {'TRUE' if decision.final_trigger else 'FALSE'}")
 
         if decision.final_trigger:
+            previous_record = json.loads(json.dumps(state.get("accounts", {}).get(account.account_id))) if state.get("accounts", {}).get(account.account_id) is not None else None
             try:
-                notifier.send_budget_alert(snapshot)
+                update_account_state(state, snapshot, alert_sent=True)
+                save_state(STATE_FILE, state)
+                state_prepared_for_send = True
+            except Exception as exc:
+                had_error = True
+                print(f"State persistence failed before send: {type(exc).__name__}")
+                append_budget_alert_log(log_payload(snapshot, decision, "NOT_ATTEMPTED_STATE_ERROR", False, run_start))
+                continue
+            try:
+                delivery = notifier.send_budget_alert(snapshot)
             except FeishuError as exc:
                 had_error = True
+                if previous_record is None:
+                    state.get("accounts", {}).pop(account.account_id, None)
+                else:
+                    state.setdefault("accounts", {})[account.account_id] = previous_record
+                try:
+                    save_state(STATE_FILE, state)
+                except Exception:
+                    logger.exception("Failed to roll back alert state after Feishu failure for account %s", account.account_id)
                 print("---")
                 print(f"Account Name: {account.name}")
                 print(f"Error Message: {exc}")
@@ -401,21 +441,49 @@ def run_check_budget() -> int:
         else:
             print(f"Trigger Reason: {decision.final_reason}")
 
-        update_account_state(state, snapshot, account_alert_sent)
+        if not state_prepared_for_send:
+            update_account_state(state, snapshot, account_alert_sent)
         state_updated = True
-        append_budget_alert_log(log_payload(snapshot, decision, "SENT" if account_alert_sent else "NOT_SENT", True, run_start))
+        append_budget_alert_log(log_payload(snapshot, decision, "SENT" if account_alert_sent else "NOT_SENT", True, run_start, delivery))
 
+    check_completed = datetime.now(BEIJING_TZ)
+    if state_updated and not had_error:
+        state["last_successful_check_at"] = check_completed.isoformat(timespec="seconds")
     if state_updated:
         save_state(STATE_FILE, state)
 
+    context = budget_alert_run_context(run_start)
+    planned = datetime.fromisoformat(context["planned_beijing_time"])
+    total_delay_seconds = int((check_completed - planned).total_seconds())
+    delay_delivery: dict[str, Any] | None = None
+    if context["run_trigger"] == "recovery" and total_delay_seconds > 1800:
+        try:
+            delay_delivery = FeishuWebhookClient().send_text(
+                "\n".join([
+                    "Budget Alert System Alert",
+                    "",
+                    f"Status: SCHEDULE_DELAYED",
+                    f"Planned Time: {context['planned_beijing_time']}",
+                    f"Check Completed Time: {check_completed.isoformat(timespec='seconds')}",
+                    f"Total Delay: {total_delay_seconds} seconds",
+                    f"Account Check Result: {'ERROR' if had_error else 'RECOVERY_COMPLETED'}",
+                ])
+            )
+        except FeishuError:
+            had_error = True
     append_budget_alert_log(
         {
-            **budget_alert_run_context(run_start),
+            **context,
             "message_type": "budget_alert_summary",
             "accounts_checked": len(ACCOUNTS),
             "had_error": had_error,
             "any_alert_sent": any_alert_sent,
             "state_json_updated": state_updated,
+            "check_completed_time": check_completed.isoformat(timespec="seconds"),
+            "total_delay_seconds": total_delay_seconds,
+            "schedule_status": "SCHEDULE_DELAYED" if total_delay_seconds > 1800 else "ON_TIME",
+            "delay_alert_send_result": "SENT" if delay_delivery else ("ERROR" if context["run_trigger"] == "recovery" and total_delay_seconds > 1800 else "NOT_NEEDED"),
+            "delay_alert_sent_time": delay_delivery.get("sent_at") if delay_delivery else None,
         }
     )
 
@@ -508,17 +576,32 @@ def debug_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision
 
 def budget_alert_run_context(actual_start: datetime) -> dict[str, Any]:
     observed = actual_start.astimezone(BEIJING_TZ)
-    scheduled = observed.replace(hour=9, minute=0, second=0, microsecond=0)
-    if scheduled > observed:
-        scheduled = scheduled - timedelta(days=1)
+    created_raw = os.getenv("WORKFLOW_CREATED_TIME")
+    job_started_raw = os.getenv("JOB_STARTED_TIME")
+    trigger = os.getenv("BUDGET_ALERT_TRIGGER", "local")
+    basis = observed
+    if created_raw:
+        try:
+            basis = datetime.fromisoformat(created_raw.replace("Z", "+00:00")).astimezone(BEIJING_TZ)
+        except ValueError:
+            pass
+    if trigger in {"schedule", "recovery"}:
+        scheduled = basis.replace(minute=17, second=0, microsecond=0)
+        if scheduled > observed:
+            scheduled = scheduled - timedelta(hours=1)
+    else:
+        scheduled = basis
     return {
         "planned_beijing_time": scheduled.isoformat(timespec="seconds"),
+        "workflow_created_time": created_raw or "unavailable",
+        "job_started_time": job_started_raw or observed.isoformat(timespec="seconds"),
         "actual_start": observed.isoformat(timespec="seconds"),
         "scheduler_delay_seconds": int((observed - scheduled).total_seconds()),
+        "run_trigger": trigger,
     }
 
 
-def log_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision, feishu_result: str, state_updated: bool, actual_start: datetime) -> dict[str, Any]:
+def log_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision, feishu_result: str, state_updated: bool, actual_start: datetime, delivery: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         **budget_alert_run_context(actual_start),
         "message_type": "budget_alert",
@@ -538,6 +621,11 @@ def log_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision, 
         "de_duplication_would_block": decision.de_duplication_would_block,
         "final_reason": decision.final_reason,
         "feishu_send_result": feishu_result,
+        "feishu_sent_time": delivery.get("sent_at") if delivery else None,
+        "feishu_http_status": delivery.get("http_status") if delivery else None,
+        "feishu_code": delivery.get("feishu_code") if delivery else None,
+        "feishu_message": delivery.get("feishu_message") if delivery else None,
+        "account_result": "TRIGGERED_SENT" if feishu_result == "SENT" else ("TRIGGERED_DEDUPED" if decision.de_duplication_would_block else "NOT_TRIGGERED"),
         "state_json_updated": state_updated,
     }
 
