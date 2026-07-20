@@ -1,14 +1,19 @@
 const GITHUB_API = "https://api.github.com";
 
 export default {
-  async scheduled(controller, env, ctx) {
-    ctx.waitUntil(dispatchDueWorkflows(new Date(controller.scheduledTime), env));
+  async scheduled(controller, env) {
+    await dispatchDueWorkflows(new Date(controller.scheduledTime), env);
   },
 };
 
 export async function dispatchDueWorkflows(now, env) {
   const beijing = beijingParts(now);
   const jobs = dueJobs(beijing, env.MANUAL_TEST_JOB);
+  await env.SCHEDULER_STATE.put("cron:last_event", JSON.stringify({
+    scheduled_at: now.toISOString(),
+    beijing,
+    due_jobs: jobs.map((job) => job.key),
+  }), { expirationTtl: 172800 });
   const results = [];
   for (const job of jobs) {
     const runKey = `${beijing.date}:${job.key}`;
