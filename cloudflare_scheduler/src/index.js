@@ -19,6 +19,12 @@ export async function dispatchDueWorkflows(now, env) {
     const response = await dispatchWorkflow(env, job, now.toISOString(), runKey);
     if (!response.ok) {
       const body = (await response.text()).slice(0, 500);
+      await env.SCHEDULER_STATE.put(`${runKey}:error`, JSON.stringify({
+        status: "GITHUB_DISPATCH_FAILED",
+        http_status: response.status,
+        error: body,
+        triggered_at: now.toISOString(),
+      }), { expirationTtl: 172800 });
       console.error(JSON.stringify({ run_key: runKey, status: "GITHUB_DISPATCH_FAILED", http_status: response.status, error: body }));
       results.push({ run_key: runKey, status: "FAILED", http_status: response.status });
       continue;
