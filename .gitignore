@@ -8,3 +8,4 @@ data/approvals/*.json
 data/reviews/*.json
 data/rule_feedback/*.json
 .pytest_cache/
+cloudflare_scheduler/.wrangler/

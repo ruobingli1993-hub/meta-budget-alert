@@ -23,12 +23,13 @@ ZERO_DECIMAL_CURRENCIES = {"BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA
 DataStatus = Literal["SUCCESS", "EMPTY", "ERROR"]
 InsightLevel = Literal["account", "campaign", "adset"]
 
-INSIGHT_FIELDS = "spend,actions,action_values,clicks,inline_link_clicks,impressions,reach"
+INSIGHT_FIELDS = "spend,actions,action_values,purchase_roas,clicks,inline_link_clicks,impressions,reach"
 CAMPAIGN_INSIGHT_FIELDS = "campaign_id,campaign_name," + INSIGHT_FIELDS
 ADSET_INSIGHT_FIELDS = "campaign_id,campaign_name,adset_id,adset_name," + INSIGHT_FIELDS
 
 PURCHASE_ACTION_TYPES = ("purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase")
 PURCHASE_VALUE_ACTION_TYPES = PURCHASE_ACTION_TYPES
+PURCHASE_ROAS_ACTION_TYPES = ("omni_purchase", "purchase", "offsite_conversion.fb_pixel_purchase")
 ATC_ACTION_TYPES = ("add_to_cart", "offsite_conversion.fb_pixel_add_to_cart", "omni_add_to_cart")
 CHECKOUT_ACTION_TYPES = ("initiate_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "omni_initiated_checkout")
 LINK_CLICK_ACTION_TYPES = ("link_click",)
@@ -92,6 +93,7 @@ class InsightRecord:
     meta_error_code: int | str | None = None
     raw_action_types: tuple[str, ...] = ()
     raw_action_value_types: tuple[str, ...] = ()
+    raw_purchase_roas_types: tuple[str, ...] = ()
     selected_purchase_action_type: str | None = None
     selected_purchase_value_action_type: str | None = None
     raw_spend: str | None = None
@@ -302,8 +304,12 @@ def record_from_row(account: AccountMeta, level: InsightLevel, period: PeriodSpe
     reach = decimal_or_none(row.get("reach"))
     purchase = select_action(row.get("actions", []), PURCHASE_ACTION_TYPES)
     purchase_value = select_action(row.get("action_values", []), PURCHASE_VALUE_ACTION_TYPES)
+    purchase_roas = select_action(row.get("purchase_roas", []), PURCHASE_ROAS_ACTION_TYPES)
     add_to_cart = select_action(row.get("actions", []), ATC_ACTION_TYPES)
     checkout = select_action(row.get("actions", []), CHECKOUT_ACTION_TYPES)
+    # The report contract requires ROAS = Purchase Value / Spend. Meta's native
+    # purchase_roas is retained only as source diagnostics and must not be used
+    # to fabricate a missing Purchase Value.
     roas = safe_div_optional(purchase_value.value, spend)
     entity_id = str(row.get(f"{level}_id") or fallback_id)
     entity_name = str(row.get(f"{level}_name") or fallback_name or entity_id)
@@ -339,6 +345,7 @@ def record_from_row(account: AccountMeta, level: InsightLevel, period: PeriodSpe
         data_status="SUCCESS",
         raw_action_types=action_types(row.get("actions", [])),
         raw_action_value_types=action_types(row.get("action_values", [])),
+        raw_purchase_roas_types=action_types(row.get("purchase_roas", [])),
         selected_purchase_action_type=purchase.action_type,
         selected_purchase_value_action_type=purchase_value.action_type,
         raw_spend=str(row.get("spend")) if row.get("spend") is not None else None,
@@ -532,6 +539,7 @@ def write_provider_log(record: InsightRecord, fields: str) -> None:
         "raw_spend": record.raw_spend,
         "raw_actions_action_type_list": list(record.raw_action_types),
         "raw_action_values_action_type_list": list(record.raw_action_value_types),
+        "raw_purchase_roas_action_type_list": list(record.raw_purchase_roas_types),
         "selected_purchase_action_type": record.selected_purchase_action_type,
         "selected_purchase_value_action_type": record.selected_purchase_value_action_type,
         "parsed_purchase": str(record.purchase) if record.purchase is not None else None,

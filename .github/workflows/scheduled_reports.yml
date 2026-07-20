@@ -12,10 +12,18 @@ on:
           - morning
           - daily-close
           - early-pulse
+      triggered_at:
+        description: "UTC timestamp supplied by the external scheduler"
+        required: false
+        type: string
   schedule:
     - cron: "0 1 * * *"
     - cron: "30 7 * * *"
     - cron: "0 10 * * *"
+
+concurrency:
+  group: scheduled-meta-reports-production
+  cancel-in-progress: false
 
 jobs:
   scheduled-report:
@@ -24,9 +32,20 @@ jobs:
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
       DASHBOARD_URL: ${{ vars.DASHBOARD_URL || secrets.DASHBOARD_URL }}
+      ALLOW_STALE_SCHEDULED_REPORT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+      TRIGGERED_AT: ${{ inputs.triggered_at || '' }}
+      SCHEDULED_REPORT_STATE_FILE: scheduled_report_state.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore report send state
+        uses: actions/cache/restore@v4
+        with:
+          path: scheduled_report_state.json
+          key: scheduled-report-state-${{ github.run_id }}
+          restore-keys: |
+            scheduled-report-state-
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -56,3 +75,19 @@ jobs:
 
       - name: Send scheduled report
         run: python main.py --scheduled-report "${{ steps.mode.outputs.mode }}"
+
+      - name: Save report send state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: scheduled_report_state.json
+          key: scheduled-report-state-${{ github.run_id }}
+
+      - name: Upload scheduled report log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-report-log-${{ github.run_id }}
+          path: logs/scheduled_reports.log
+          if-no-files-found: warn
+          retention-days: 14
