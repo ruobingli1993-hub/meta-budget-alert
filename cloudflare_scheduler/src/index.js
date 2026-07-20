@@ -1,8 +1,8 @@
 const GITHUB_API = "https://api.github.com";
 
 export default {
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(dispatchDueWorkflows(new Date(), env));
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(dispatchDueWorkflows(new Date(controller.scheduledTime), env));
   },
 };
 
