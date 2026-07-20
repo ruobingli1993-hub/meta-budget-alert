@@ -8,7 +8,7 @@ export default {
 
 export async function dispatchDueWorkflows(now, env) {
   const beijing = beijingParts(now);
-  const jobs = dueJobs(beijing);
+  const jobs = dueJobs(beijing, env.MANUAL_TEST_JOB);
   const results = [];
   for (const job of jobs) {
     const runKey = `${beijing.date}:${job.key}`;
@@ -30,8 +30,14 @@ export async function dispatchDueWorkflows(now, env) {
   return results;
 }
 
-function dueJobs(beijing) {
+function dueJobs(beijing, manualTestJob = "") {
   const jobs = [];
+  if (manualTestJob === "budget-alert") {
+    return [{ key: "manual-budget-alert", workflow: "check_budget.yml", inputs: {} }];
+  }
+  if (["morning", "daily-close", "early-pulse"].includes(manualTestJob)) {
+    return [reportJob(manualTestJob)];
+  }
   if (beijing.minute === 15) {
     jobs.push({ key: `${String(beijing.hour).padStart(2, "0")}:budget-alert`, workflow: "check_budget.yml", inputs: {} });
   }
