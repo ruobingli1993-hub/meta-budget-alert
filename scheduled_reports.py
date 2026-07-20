@@ -293,6 +293,9 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
     perf_purchase = sum((decimal_or_zero(row.current.purchase) for row in perf), Decimal("0"))
     perf_revenue = sum_purchase_value(perf)
     perf_roas = safe_div(perf_revenue, perf_spend)
+    # Brand is upper-funnel and has no account-level Purchase ROAS judgment,
+    # but its spend belongs in the blended business ROI denominator.
+    overall_roi = safe_div(perf_revenue, total_spend)
     impressions = sum((decimal_or_zero(row.current.impressions) for row in success), Decimal("0"))
     clicks = sum((decimal_or_zero(row.current.clicks) for row in success), Decimal("0"))
     overall_status = overall_report_status(rows, confidence, perf_roas)
@@ -309,6 +312,7 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
         f"Overall Status: {overall_status}",
         f"Data Confidence: {confidence}",
         f"Total Spend ({len(success)} accounts): {money(total_spend)}",
+        f"Overall ROI: {fmt_optional(overall_roi)}",
         f"Performance ROAS: {fmt_optional(perf_roas)}",
         f"Purchase: {fmt(total_purchase)}",
         f"CPA: {money(safe_div(perf_spend, perf_purchase))}",

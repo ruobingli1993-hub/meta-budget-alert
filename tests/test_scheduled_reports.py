@@ -101,7 +101,25 @@ class ScheduledReportsTest(unittest.TestCase):
             fake_preview.return_value.created_at = "2026-07-10T09:00:00"
             text = format_report(plan, rows)
         self.assertNotIn("All-account Blended ROAS", text)
+        self.assertIn("Overall ROI: 1.50", text)
         self.assertIn("Performance ROAS: 3.00", text)
+
+    def test_overall_roi_includes_brand_spend_in_denominator(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 20, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        perf2 = AccountConfig("Performance 2", "3", "performance")
+        rows = [
+            AccountReportRow(PERF, META, record(PERF, spend="1481.29", purchase="21", value="5456.82"), None, None, "HEALTHY", "ok"),
+            AccountReportRow(perf2, META, record(perf2, spend="274.59", purchase="2", value="2471.23"), None, None, "HEALTHY", "ok"),
+            AccountReportRow(BRAND, META, record(BRAND, spend="84.81", purchase=None, value=None, roas=None), None, None, "HEALTHY", "ok"),
+        ]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-20T15:30:00"
+            text = format_report(plan, rows)
+        self.assertIn("Total Spend (3 accounts): $1840.69", text)
+        self.assertIn("Overall ROI: 4.31", text)
+        self.assertIn("Performance ROAS: 4.52", text)
 
     def test_low_confidence_and_missing_performance_roas_is_insufficient(self) -> None:
         plan = build_report_plan("early-pulse", "America/Phoenix", datetime(2026, 7, 10, 18, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
