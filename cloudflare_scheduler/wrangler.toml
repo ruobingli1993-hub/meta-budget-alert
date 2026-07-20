@@ -1,7 +1,8 @@
 name = "meta-automation-scheduler-v1"
 main = "src/index.js"
 compatibility_date = "2026-07-20"
-workers_dev = false
+workers_dev = true
+preview_urls = false
 
 [triggers]
 crons = ["*/15 * * * *"]
