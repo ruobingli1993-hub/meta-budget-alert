@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
 import requests
@@ -21,7 +22,7 @@ class FeishuWebhookClient:
         self.webhook_url = webhook_url
         self.session = requests.Session()
 
-    def send_text(self, text: str) -> None:
+    def send_text(self, text: str) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "msg_type": "text",
             "content": {"text": text},
@@ -39,7 +40,18 @@ class FeishuWebhookClient:
                 result = response.json()
                 if result.get("code") not in (0, None):
                     raise FeishuError(f"Feishu webhook error: {result}")
-                return
+                sent_at = datetime.now().astimezone().isoformat(timespec="seconds")
+                delivery = {
+                    "http_status": response.status_code,
+                    "feishu_code": result.get("code"),
+                    "feishu_message": result.get("msg") or result.get("message"),
+                    "sent_at": sent_at,
+                }
+                logger.info(
+                    "Feishu webhook sent | http_status=%s | feishu_code=%s | sent_at=%s",
+                    delivery["http_status"], delivery["feishu_code"], sent_at,
+                )
+                return delivery
             except (requests.RequestException, ValueError, FeishuError) as exc:
                 last_error = exc
                 if attempt == REQUEST_MAX_RETRIES:
