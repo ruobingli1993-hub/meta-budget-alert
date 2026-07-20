@@ -598,6 +598,8 @@ def budget_alert_run_context(actual_start: datetime) -> dict[str, Any]:
         "actual_start": observed.isoformat(timespec="seconds"),
         "scheduler_delay_seconds": int((observed - scheduled).total_seconds()),
         "run_trigger": trigger,
+        "triggered_at": os.getenv("TRIGGERED_AT") or None,
+        "run_key": os.getenv("RUN_KEY") or f"{scheduled.strftime('%Y-%m-%dT%H')}:budget-alert",
     }
 
 

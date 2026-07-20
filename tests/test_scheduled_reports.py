@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from config import AccountConfig
 from meta_data_provider import AccountMeta, InsightRecord, PeriodSpec
-from scheduled_reports import AccountReportRow, build_report_plan, format_report, judge_account, parse_as_of, scheduled_time, write_log
+from scheduled_reports import AccountReportRow, build_report_plan, ensure_schedule_fresh, format_report, judge_account, load_report_state, parse_as_of, performance_missing_reason, save_report_state, scheduled_time, write_log, write_skip_log
 
 
 PERF = AccountConfig("Performance", "1", "performance")
@@ -116,7 +116,9 @@ class ScheduledReportsTest(unittest.TestCase):
 
     def test_purchase_value_missing_shows_revenue_and_roas_na(self) -> None:
         plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
-        rows = [AccountReportRow(PERF, META, record(PERF, spend="100", purchase="2", value=None, roas=None), None, None, "DATA_INSUFFICIENT", "missing value")]
+        current = record(PERF, spend="100", purchase="2", value=None, roas=None)
+        status, reason = judge_account(PERF, current, record(PERF, spend="100", value="250"), plan)
+        rows = [AccountReportRow(PERF, META, current, record(PERF, spend="100", value="250"), None, status, reason)]
         with patch("scheduled_reports.load_preview") as fake_preview:
             fake_preview.return_value.suggestions = []
             fake_preview.return_value.run_id = "budget_test"
@@ -125,6 +127,32 @@ class ScheduledReportsTest(unittest.TestCase):
         self.assertIn("Performance ROAS: N/A", text)
         self.assertIn("ROAS N/A", text)
         self.assertNotIn("ROAS 0.00", text)
+        self.assertIn("Purchase Value N/A", text)
+        self.assertIn("Data Date 2026-07-10", text)
+        self.assertIn("Account Timezone America/Phoenix", text)
+        self.assertIn("Missing Reason: Purchase Value字段缺失", text)
+        self.assertEqual(status, "DATA_ERROR")
+
+    def test_realtime_missing_value_has_reason_and_seven_day_reference(self) -> None:
+        plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 10, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        current = record(PERF, spend="100", purchase="2", value=None, roas=None)
+        history = record(PERF, spend="100", purchase="2", value="320")
+        status, reason = judge_account(PERF, current, history, plan)
+        rows = [AccountReportRow(PERF, META, current, history, None, status, reason, history)]
+        with patch("scheduled_reports.load_preview") as fake_preview:
+            fake_preview.return_value.suggestions = []
+            fake_preview.return_value.run_id = "budget_test"
+            fake_preview.return_value.created_at = "2026-07-10T09:00:00"
+            text = format_report(plan, rows)
+        self.assertEqual(status, "DATA_INSUFFICIENT")
+        self.assertIn("当日数据尚未完全回传：Purchase Value字段缺失", text)
+        self.assertIn("Last 7 Complete Days ROAS: 3.20", text)
+
+    def test_missing_reason_distinguishes_zero_spend_and_api_error(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        self.assertEqual(performance_missing_reason(record(PERF, spend="0", purchase="0", value="0"), plan), "Spend为0，无法计算ROAS")
+        failed = record(PERF, spend=None, purchase=None, value=None, status="ERROR")
+        self.assertIn("Meta接口失败", performance_missing_reason(failed, plan))
 
     def test_api_failure_not_zero_and_dashboard_url_missing(self) -> None:
         plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 10, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
@@ -150,6 +178,19 @@ class ScheduledReportsTest(unittest.TestCase):
         self.assertEqual(scheduled_time("early-pulse", observed).isoformat(), "2026-07-15T18:00:00+08:00")
         after_midnight = datetime(2026, 7, 16, 0, 13, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
         self.assertEqual(scheduled_time("early-pulse", after_midnight).isoformat(), "2026-07-15T18:00:00+08:00")
+
+    def test_stale_scheduled_report_is_suppressed(self) -> None:
+        planned = datetime(2026, 7, 16, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with patch.dict(os.environ, {}, clear=True):
+            ensure_schedule_fresh(planned, datetime(2026, 7, 16, 9, 29, tzinfo=ZoneInfo("Asia/Shanghai")))
+            with self.assertRaisesRegex(RuntimeError, "Stale scheduled report suppressed"):
+                ensure_schedule_fresh(planned, datetime(2026, 7, 16, 17, 29, tzinfo=ZoneInfo("Asia/Shanghai")))
+
+    def test_manual_dispatch_can_allow_stale_report(self) -> None:
+        planned = datetime(2026, 7, 16, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        actual = datetime(2026, 7, 16, 17, 29, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with patch.dict(os.environ, {"ALLOW_STALE_SCHEDULED_REPORT": "true"}, clear=True):
+            ensure_schedule_fresh(planned, actual)
 
     def test_expected_windows_for_july_16_beijing_slots(self) -> None:
         tz = ZoneInfo("Asia/Shanghai")
@@ -204,7 +245,27 @@ class ScheduledReportsTest(unittest.TestCase):
         self.assertEqual(payload["query_date"], "2026-07-15")
         self.assertEqual(payload["cutoff_hour"], 18)
         self.assertEqual(payload["accounts"][0]["raw_spend"], "123")
+        self.assertEqual(payload["accounts"][0]["purchase_value"], "300")
+        self.assertEqual(payload["accounts"][0]["roas"], str(Decimal("300") / Decimal("123")))
         self.assertEqual(payload["feishu_send_result"], "SUCCESS")
+
+    def test_report_state_round_trip_and_skip_log_run_key(self) -> None:
+        state_path = Path("logs/test_scheduled_report_state.json")
+        log_path = Path("logs/test_scheduled_reports_skip.log")
+        for path in (state_path, log_path):
+            if path.exists():
+                path.unlink()
+        with patch("scheduled_reports.SCHEDULED_REPORT_STATE", state_path), patch("scheduled_reports.SCHEDULED_REPORT_LOG", log_path):
+            save_report_state({"runs": {"2026-07-16:morning": {"status": "SENT"}}})
+            self.assertEqual(load_report_state()["runs"]["2026-07-16:morning"]["status"], "SENT")
+            planned = datetime(2026, 7, 16, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+            write_skip_log("morning", planned, planned, "2026-07-16:morning", "already_sent")
+            payload = json.loads(log_path.read_text(encoding="utf-8").strip())
+            self.assertEqual(payload["run_key"], "2026-07-16:morning")
+            self.assertEqual(payload["send_status"], "SKIPPED")
+            self.assertEqual(payload["skip_reason"], "already_sent")
+        state_path.unlink()
+        log_path.unlink()
 
     def test_github_cron_and_dispatch(self) -> None:
         workflow = Path(".github/workflows/scheduled_reports.yml").read_text(encoding="utf-8")
@@ -213,6 +274,10 @@ class ScheduledReportsTest(unittest.TestCase):
         self.assertIn('cron: "30 7 * * *"', workflow)
         self.assertIn('cron: "0 10 * * *"', workflow)
         self.assertIn("report_mode:", workflow)
+        self.assertIn("ALLOW_STALE_SCHEDULED_REPORT:", workflow)
+        self.assertIn("scheduled-meta-reports-production", workflow)
+        self.assertIn("scheduled-report-state-", workflow)
+        self.assertIn("triggered_at:", workflow)
 
 
 if __name__ == "__main__":

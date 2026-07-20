@@ -116,6 +116,24 @@ class MetaDataProviderTest(unittest.TestCase):
         self.assertEqual(record.selected_purchase_action_type, "purchase")
         self.assertEqual(action_types(record.raw_rows_sample[0]["actions"]), ("purchase", "offsite_conversion.fb_pixel_purchase", "omni_purchase"))
 
+    def test_native_purchase_roas_does_not_fabricate_missing_purchase_value(self) -> None:
+        record = record_from_row(
+            META,
+            "account",
+            TODAY,
+            {
+                "spend": "100",
+                "actions": [{"action_type": "purchase", "value": "2"}],
+                "action_values": [],
+                "purchase_roas": [{"action_type": "omni_purchase", "value": "3.25"}],
+            },
+            ACCOUNT.api_id,
+            ACCOUNT.name,
+        )
+        self.assertIsNone(record.roas)
+        self.assertIsNone(record.purchase_value)
+        self.assertEqual(record.raw_purchase_roas_types, ("omni_purchase",))
+
     def test_api_error_does_not_become_zero(self) -> None:
         provider = MetaDataProvider(ErrorAPI())  # type: ignore[arg-type]
         record = provider.get_insights(ACCOUNT, "account", "today", meta=META)[0]

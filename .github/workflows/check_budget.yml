@@ -6,6 +6,15 @@ on:
     - cron: "17 * * * *"
     - cron: "47 * * * *"
   workflow_dispatch:
+    inputs:
+      triggered_at:
+        description: "UTC timestamp supplied by the external scheduler"
+        required: false
+        type: string
+      run_key:
+        description: "Unique scheduler run key"
+        required: false
+        type: string
 
 concurrency:
   group: budget-alert-production
@@ -64,6 +73,8 @@ jobs:
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           STATE_FILE: state.json
+          TRIGGERED_AT: ${{ inputs.triggered_at || '' }}
+          RUN_KEY: ${{ inputs.run_key || '' }}
         run: python main.py --check-budget
 
       - name: Save alert state
