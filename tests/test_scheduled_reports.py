@@ -110,7 +110,7 @@ class ScheduledReportsTest(unittest.TestCase):
         rows = [
             AccountReportRow(PERF, META, record(PERF, spend="1481.29", purchase="21", value="5456.82"), None, None, "HEALTHY", "ok"),
             AccountReportRow(perf2, META, record(perf2, spend="274.59", purchase="2", value="2471.23"), None, None, "HEALTHY", "ok"),
-            AccountReportRow(BRAND, META, record(BRAND, spend="84.81", purchase=None, value=None, roas=None), None, None, "HEALTHY", "ok"),
+            AccountReportRow(BRAND, META, record(BRAND, spend="84.81", purchase="1", value="500", roas="5.895531187359981134300200448"), None, None, "HEALTHY", "ok"),
         ]
         with patch("scheduled_reports.load_preview") as fake_preview:
             fake_preview.return_value.suggestions = []
@@ -118,8 +118,16 @@ class ScheduledReportsTest(unittest.TestCase):
             fake_preview.return_value.created_at = "2026-07-20T15:30:00"
             text = format_report(plan, rows)
         self.assertIn("Total Spend (3 accounts): $1840.69", text)
-        self.assertIn("Overall ROI: 4.31", text)
+        self.assertIn("Overall ROI: 4.58", text)
         self.assertIn("Performance ROAS: 4.52", text)
+
+    def test_dashboard_review_section_is_hidden_from_feishu_report(self) -> None:
+        plan = build_report_plan("daily-close", "America/Phoenix", datetime(2026, 7, 20, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")))
+        rows = [AccountReportRow(PERF, META, record(PERF), None, None, "HEALTHY", "ok")]
+        text = format_report(plan, rows)
+        self.assertNotIn("Review RUN_ID", text)
+        self.assertNotIn("Pending:", text)
+        self.assertNotIn("View Dashboard", text)
 
     def test_low_confidence_and_missing_performance_roas_is_insufficient(self) -> None:
         plan = build_report_plan("early-pulse", "America/Phoenix", datetime(2026, 7, 10, 18, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
@@ -182,10 +190,9 @@ class ScheduledReportsTest(unittest.TestCase):
             fake_preview.return_value.created_at = "2026-07-09T09:00:00"
             text = format_report(plan, rows)
         self.assertIn("Overall Status: DATA_INSUFFICIENT", text)
-        self.assertIn("Dashboard URL not configured", text)
+        self.assertNotIn("Dashboard URL", text)
         self.assertNotIn("Spend $0.00", text)
-        self.assertIn("Review RUN_ID: budget_old", text)
-        self.assertIn("Review data generated at: 2026-07-09T09:00:00", text)
+        self.assertNotIn("Review RUN_ID", text)
 
     def test_as_of_parses_offset_datetime(self) -> None:
         parsed = parse_as_of("2026-07-10T18:00:00-07:00")
