@@ -464,8 +464,14 @@ def sum_records(records: list[InsightRecord], level: InsightLevel, period: str) 
         return non_success[0]
     spend = sum((decimal_or_zero(record.spend) for record in records), ZERO)
     purchase = sum((decimal_or_zero(record.purchase) for record in records), ZERO)
-    purchase_values = [record.purchase_value for record in records]
-    purchase_value = None if any(value is None for value in purchase_values) else sum((decimal_or_zero(value) for value in purchase_values), ZERO)
+    purchase_value_missing = any(
+        decimal_or_zero(record.purchase) > ZERO and record.purchase_value is None
+        for record in records
+    )
+    purchase_value = None if purchase_value_missing else sum(
+        (decimal_or_zero(record.purchase_value) for record in records),
+        ZERO,
+    )
     impressions = sum((decimal_or_zero(record.impressions) for record in records), ZERO)
     clicks = sum((decimal_or_zero(record.clicks) for record in records), ZERO)
     link_clicks = sum((decimal_or_zero(record.link_clicks) for record in records), ZERO)
