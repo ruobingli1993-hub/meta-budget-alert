@@ -16,6 +16,7 @@ from meta_data_provider import (
     error_record,
     extract_learning_status,
     record_from_row,
+    sum_records,
 )
 from morning_report import metric_from_record
 from skills.budget_manager import analyzer, rules
@@ -90,6 +91,55 @@ class MetaDataProviderTest(unittest.TestCase):
         self.assertEqual(record.purchase, Decimal("2"))
         self.assertEqual(record.purchase_value, Decimal("350"))
         self.assertEqual(record.roas, Decimal("3.5"))
+
+    def test_hourly_sum_ignores_missing_purchase_value_when_hour_has_no_purchase(self) -> None:
+        period = PeriodSpec("today_same_time", "2026-07-20", "2026-07-20")
+        purchase_hour = record_from_row(
+            META,
+            "account",
+            period,
+            {
+                "spend": "100",
+                "actions": [{"action_type": "purchase", "value": "2"}],
+                "action_values": [{"action_type": "purchase", "value": "300"}],
+            },
+            ACCOUNT.account_id,
+            ACCOUNT.name,
+        )
+        no_purchase_hour = record_from_row(
+            META,
+            "account",
+            period,
+            {"spend": "50", "actions": [], "action_values": []},
+            ACCOUNT.account_id,
+            ACCOUNT.name,
+        )
+
+        combined = sum_records([purchase_hour, no_purchase_hour], "account", period.period)
+
+        self.assertEqual(combined.purchase, Decimal("2"))
+        self.assertEqual(combined.purchase_value, Decimal("300"))
+        self.assertEqual(combined.roas, Decimal("2"))
+
+    def test_hourly_sum_keeps_purchase_value_missing_when_purchase_hour_has_no_value(self) -> None:
+        period = PeriodSpec("today_same_time", "2026-07-20", "2026-07-20")
+        missing_value_hour = record_from_row(
+            META,
+            "account",
+            period,
+            {
+                "spend": "100",
+                "actions": [{"action_type": "purchase", "value": "2"}],
+                "action_values": [],
+            },
+            ACCOUNT.account_id,
+            ACCOUNT.name,
+        )
+
+        combined = sum_records([missing_value_hour], "account", period.period)
+
+        self.assertIsNone(combined.purchase_value)
+        self.assertIsNone(combined.roas)
 
     def test_purchase_event_priority_does_not_double_count(self) -> None:
         record = record_from_row(
