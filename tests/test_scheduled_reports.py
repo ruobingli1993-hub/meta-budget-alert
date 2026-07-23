@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from config import AccountConfig
 from meta_data_provider import AccountMeta, InsightRecord, PeriodSpec
-from scheduled_reports import AccountReportRow, build_report_plan, ensure_schedule_fresh, format_report, judge_account, load_report_state, parse_as_of, performance_missing_reason, save_report_state, scheduled_time, write_log, write_skip_log
+from scheduled_reports import AccountReportRow, build_report_plan, ensure_schedule_fresh, fetch_period, format_report, judge_account, load_report_state, parse_as_of, performance_missing_reason, save_report_state, scheduled_time, write_log, write_skip_log
 
 
 PERF = AccountConfig("Performance", "1", "performance")
@@ -54,6 +54,29 @@ def record(account, spend="100", purchase="2", value="300", roas=None, status="S
 
 
 class ScheduledReportsTest(unittest.TestCase):
+    def test_realtime_current_period_uses_account_aggregate(self) -> None:
+        plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 23, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        aggregate = record(PERF, spend="1083.62", purchase="12", value="3010.44")
+        provider = unittest.mock.Mock()
+        provider.get_insights_for_period.return_value = [aggregate]
+
+        result = fetch_period(provider, PERF, META, plan.current_period, plan)
+
+        self.assertEqual(result.purchase_value, Decimal("3010.44"))
+        self.assertEqual(result.roas, Decimal("3010.44") / Decimal("1083.62"))
+        self.assertIsNone(provider.get_insights_for_period.call_args.kwargs["hourly_until_hour"])
+
+    def test_realtime_history_keeps_same_hour_cutoff(self) -> None:
+        plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 23, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
+        history = record(PERF, spend="700", purchase="7", value="2100")
+        provider = unittest.mock.Mock()
+        provider.get_insights_for_period.return_value = [history]
+
+        result = fetch_period(provider, PERF, META, plan.comparison_7d, plan, average_days=7)
+
+        self.assertEqual(provider.get_insights_for_period.call_args.kwargs["hourly_until_hour"], 18)
+        self.assertEqual(result.purchase_value, Decimal("300"))
+
     def test_morning_uses_same_time_window(self) -> None:
         plan = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 10, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")))
         self.assertTrue(plan.same_time_window)
