@@ -187,7 +187,12 @@ def fetch_period(
     plan: ReportPlan,
     average_days: int | None = None,
 ) -> InsightRecord:
-    hourly = plan.account_local_time.hour if plan.same_time_window else None
+    # For the live current period, Meta's account-level aggregate is the
+    # authoritative source used by Ads Manager. The hourly breakdown can omit
+    # action_values for purchase-bearing rows even when the aggregate has the
+    # correct Purchase Value and native purchase_roas. Historical same-time
+    # comparisons still need the hourly cutoff.
+    hourly = plan.account_local_time.hour if plan.same_time_window and average_days is not None else None
     records = provider.get_insights_for_period(account, "account", period, meta=meta, hourly_until_hour=hourly)
     combined = sum_records(records, "account", period.period) if len(records) > 1 else records[0]
     if average_days and combined.data_status == "SUCCESS":
