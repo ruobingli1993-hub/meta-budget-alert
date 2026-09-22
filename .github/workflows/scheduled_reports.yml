@@ -32,7 +32,11 @@ jobs:
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
       DASHBOARD_URL: ${{ vars.DASHBOARD_URL || secrets.DASHBOARD_URL }}
-      ALLOW_STALE_SCHEDULED_REPORT: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+      # Cloudflare is the primary clock. GitHub's own schedule is a deliberately
+      # independent fallback: if it arrives late, send the correctly anchored
+      # report with a visible late-delivery label rather than silently dropping it.
+      ALLOW_STALE_SCHEDULED_REPORT: "true"
+      SCHEDULED_TRIGGER_SOURCE: ${{ github.event_name }}
       TRIGGERED_AT: ${{ inputs.triggered_at || '' }}
       SCHEDULED_REPORT_STATE_FILE: scheduled_report_state.json
     steps:

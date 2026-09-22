@@ -24,9 +24,23 @@ export async function dispatchDueWorkflows(now, env) {
     const response = await dispatchWorkflow(env, job, now.toISOString(), runKey);
     if (!response.ok) {
       const body = (await response.text()).slice(0, 500);
+      const authProbe = await fetch(`${GITHUB_API}/user`, {
+        headers: {
+          Authorization: `token ${env.GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "meta-budget-alert-cloudflare-scheduler-v1",
+        },
+      });
       await env.SCHEDULER_STATE.put(`${runKey}:error`, JSON.stringify({
         status: "GITHUB_DISPATCH_FAILED",
         http_status: response.status,
+        auth_probe_http_status: authProbe.status,
+        token_format: {
+          length: String(env.GITHUB_TOKEN || "").length,
+          expected_prefix: String(env.GITHUB_TOKEN || "").startsWith("github_pat_"),
+          contains_whitespace: /\s/.test(String(env.GITHUB_TOKEN || "")),
+        },
         error: body,
         triggered_at: now.toISOString(),
       }), { expirationTtl: 172800 });
@@ -52,16 +66,24 @@ function dueJobs(beijing, manualTestJob = "") {
   if (beijing.minute === 15) {
     jobs.push({ key: `${String(beijing.hour).padStart(2, "0")}:budget-alert`, workflow: "check_budget.yml", inputs: {} });
   }
-  if (beijing.hour === 9 && beijing.minute === 0) {
-    jobs.push(reportJob("morning"));
-  }
-  if (beijing.hour === 15 && beijing.minute === 30) {
-    jobs.push(reportJob("daily-close"));
-  }
-  if (beijing.hour === 18 && beijing.minute === 0) {
-    jobs.push(reportJob("early-pulse"));
+  // A Cron event can be delayed or briefly unavailable. Keep each report slot
+  // eligible for a bounded recovery window; the existing KV run key means a
+  // successful on-time dispatch is never dispatched again.
+  for (const window of reportRecoveryWindows()) {
+    const nowMinutes = beijing.hour * 60 + beijing.minute;
+    if (nowMinutes >= window.startMinutes && nowMinutes < window.endMinutes) {
+      jobs.push(reportJob(window.mode));
+    }
   }
   return jobs;
+}
+
+function reportRecoveryWindows() {
+  return [
+    { mode: "morning", startMinutes: 9 * 60, endMinutes: 12 * 60 },
+    { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 18 * 60 },
+    { mode: "early-pulse", startMinutes: 18 * 60, endMinutes: 21 * 60 },
+  ];
 }
 
 function reportJob(mode) {
@@ -71,16 +93,26 @@ function reportJob(mode) {
 async function dispatchWorkflow(env, job, triggeredAt, runKey) {
   const inputs = { ...job.inputs, triggered_at: triggeredAt };
   if (job.workflow === "check_budget.yml") inputs.run_key = runKey;
-  return fetch(`${GITHUB_API}/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/${job.workflow}/dispatches`, {
+  const url = `${GITHUB_API}/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/${job.workflow}/dispatches`;
+  const request = (requestInputs) => {
+    const payload = { ref: env.GITHUB_REF || "main" };
+    if (Object.keys(requestInputs).length > 0) payload.inputs = requestInputs;
+    return fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      Authorization: `token ${env.GITHUB_TOKEN}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       "User-Agent": "meta-budget-alert-cloudflare-scheduler-v1",
     },
-    body: JSON.stringify({ ref: env.GITHUB_REF || "main", inputs }),
-  });
+      body: JSON.stringify(payload),
+    });
+  };
+  const response = await request(inputs);
+  if (response.status === 400) {
+    return request(job.inputs);
+  }
+  return response;
 }
 
 function beijingParts(date) {
@@ -97,4 +129,4 @@ function beijingParts(date) {
   return { date: `${value.year}-${value.month}-${value.day}`, hour: Number(value.hour), minute: Number(value.minute) };
 }
 
-export const __test = { beijingParts, dueJobs };
+export const __test = { beijingParts, dueJobs, reportRecoveryWindows };

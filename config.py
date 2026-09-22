@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,6 +16,7 @@ class AccountConfig:
     name: str
     account_id: str
     account_type: str
+    launch_date: date | None = None
 
     @property
     def api_id(self) -> str:
@@ -39,6 +41,10 @@ STATE_FILE = Path(os.getenv("STATE_FILE", "state.json"))
 ACCOUNT_CONFIGS: list[AccountConfig] = [
     AccountConfig(name="QMDT—20240103", account_id="750289240467952", account_type="performance"),
     AccountConfig(name="销售三部—新主页账户", account_id="5600626876733411", account_type="performance"),
+    AccountConfig(
+        name="Jelenew+", account_id="1614799860253372",
+        account_type="performance", launch_date=date(2026, 9, 13),
+    ),
     AccountConfig(name="Jelenew-Brand & Lab", account_id="568835832834495", account_type="brand"),
 ]
 
