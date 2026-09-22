@@ -4,7 +4,7 @@ import argparse
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -561,6 +561,7 @@ def run_check_budget_debug() -> int:
         print(f"previous_alert_state: {'ALERTING' if decision.previous_alert_state else 'CLEAR'}")
         print(f"trigger_by_days: {bool_text(decision.trigger_by_days)}")
         print(f"trigger_by_amount: {bool_text(decision.trigger_by_amount)}")
+        print(f"trigger_by_holiday: {bool_text(decision.trigger_by_holiday)}")
         print(f"final_trigger: {bool_text(decision.final_trigger)}")
         print(f"de_duplication_would_block: {bool_text(decision.de_duplication_would_block)}")
         print(f"final_reason: {decision.final_reason}")
@@ -591,7 +592,14 @@ def debug_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision
         "estimated_days_remaining": str(snapshot.estimated_days_remaining) if snapshot.estimated_days_remaining is not None else None,
         "threshold_days": str(snapshot.threshold_days),
         "threshold_amount": str(snapshot.threshold),
-        **asdict(decision),
+        "previous_alert_state": decision.previous_alert_state,
+        "trigger_by_days": decision.trigger_by_days,
+        "trigger_by_amount": decision.trigger_by_amount,
+        "trigger_by_holiday": decision.trigger_by_holiday,
+        "holiday_risk": decision.holiday_risk.key if decision.holiday_risk else None,
+        "final_trigger": decision.final_trigger,
+        "de_duplication_would_block": decision.de_duplication_would_block,
+        "final_reason": decision.final_reason,
     }
 
 
