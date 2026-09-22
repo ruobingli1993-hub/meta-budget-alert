@@ -10,6 +10,7 @@ from meta_api import AccountBudgetSnapshot, MetaMarketingAPI
 from meta_api import MetaAPIError
 from main import BEIJING_TZ, budget_alert_run_context, build_budget_alert_decision, run_check_budget, run_check_budget_debug, update_account_state
 from notifier import build_alert_message
+from chinese_holidays import holiday_recharge_risk
 from feishu import FeishuError
 
 
@@ -130,6 +131,37 @@ class BudgetAlertTest(unittest.TestCase):
         )
         self.assertTrue(snapshot.should_alert)
         self.assertEqual(snapshot.estimated_days_remaining, Decimal("3"))
+
+    def test_holiday_risk_requires_coverage_through_next_workday_plus_buffer(self) -> None:
+        risk = holiday_recharge_risk(datetime(2026, 9, 22).date(), Decimal("6"))
+        self.assertIsNotNone(risk)
+        self.assertEqual(risk.holiday.name, "中秋节")
+        self.assertEqual(risk.next_recharge_workday.isoformat(), "2026-09-28")
+        self.assertEqual(risk.required_days, 7)
+
+    def test_holiday_risk_bypasses_recent_normal_alert_dedupe(self) -> None:
+        snapshot = AccountBudgetSnapshot(
+            account=ACCOUNT, currency="USD", seven_day_spend=Decimal("700"),
+            average_daily_spend=Decimal("100"), current_balance=Decimal("600"),
+            threshold=Decimal("300"), account_spend_limit=Decimal("1000"), amount_spent=Decimal("400"),
+        )
+        now = datetime(2026, 9, 22, 10, 0, tzinfo=BEIJING_TZ)
+        state = {"accounts": {ACCOUNT.account_id: {"alerting": True, "last_alert_sent_at": (now - timedelta(hours=2)).isoformat()}}}
+        decision = build_budget_alert_decision(snapshot, state, now)
+        self.assertTrue(decision.trigger_by_holiday)
+        self.assertTrue(decision.final_trigger)
+        self.assertFalse(decision.de_duplication_would_block)
+
+    def test_holiday_alert_message_shows_recharge_coverage(self) -> None:
+        snapshot = AccountBudgetSnapshot(
+            account=ACCOUNT, currency="USD", seven_day_spend=Decimal("700"),
+            average_daily_spend=Decimal("100"), current_balance=Decimal("600"),
+            threshold=Decimal("300"), account_spend_limit=Decimal("1000"), amount_spent=Decimal("400"),
+        )
+        risk = holiday_recharge_risk(datetime(2026, 9, 22).date(), snapshot.estimated_days_remaining)
+        message = build_alert_message(snapshot, risk)
+        self.assertIn("Holiday Risk: 中秋节", message)
+        self.assertIn("Coverage Required: 7 days", message)
 
     def test_missing_spend_limit_fails_closed(self) -> None:
         api = FakeBudgetAPI({"currency": "USD", "amount_spent": "1500000"})

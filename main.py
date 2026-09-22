@@ -25,6 +25,7 @@ from feishu import FeishuError, FeishuWebhookClient
 from meta_api import AccountBudgetSnapshot, MetaAPIError, MetaMarketingAPI
 from morning_report import build_morning_report
 from notifier import BudgetAlertNotifier, money
+from chinese_holidays import HolidayRechargeRisk, holiday_recharge_risk
 from scheduled_reports import run_scheduled_report
 from skills.budget_manager import analyzer as budget_manager_analyzer
 from skills.budget_manager import executor as budget_manager_executor
@@ -47,6 +48,8 @@ class BudgetAlertDecision:
     previous_alert_state: bool
     trigger_by_days: bool
     trigger_by_amount: bool
+    trigger_by_holiday: bool
+    holiday_risk: HolidayRechargeRisk | None
     final_trigger: bool
     de_duplication_would_block: bool
     final_reason: str
@@ -147,22 +150,31 @@ def account_last_alert_sent_at(state: dict[str, Any], account_id: str) -> dateti
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(str(raw))
+        parsed = datetime.fromisoformat(str(raw))
+        # Historical state files predate timezone-aware timestamps. Treat those
+        # records as Beijing time so holiday escalation remains backward-compatible.
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=BEIJING_TZ)
     except ValueError:
         return None
 
 
 def build_budget_alert_decision(snapshot: AccountBudgetSnapshot, state: dict[str, Any], now: datetime | None = None) -> BudgetAlertDecision:
-    now = now or datetime.now()
+    now = (now or datetime.now(BEIJING_TZ)).astimezone(BEIJING_TZ)
     previous_alert_state = account_was_alerting(state, snapshot.account.account_id)
     last_sent = account_last_alert_sent_at(state, snapshot.account.account_id)
     trigger_by_days = snapshot.trigger_by_days
     trigger_by_amount = snapshot.trigger_by_amount
-    raw_trigger = trigger_by_days or trigger_by_amount
+    holiday_risk = holiday_recharge_risk(now.date(), snapshot.estimated_days_remaining)
+    trigger_by_holiday = holiday_risk is not None
+    raw_trigger = trigger_by_days or trigger_by_amount or trigger_by_holiday
     repeat_window_open = last_sent is None or now - last_sent >= REPEAT_ALERT_AFTER
-    de_duplication_would_block = bool(raw_trigger and previous_alert_state and not repeat_window_open)
+    previous_holiday_key = state.get("accounts", {}).get(snapshot.account.account_id, {}).get("holiday_risk_key")
+    holiday_escalated = bool(holiday_risk and previous_holiday_key != holiday_risk.key)
+    de_duplication_would_block = bool(raw_trigger and previous_alert_state and not repeat_window_open and not holiday_escalated)
 
-    if not raw_trigger:
+    if trigger_by_holiday:
+        reason = f"holiday coverage risk: {holiday_risk.holiday.name} requires {holiday_risk.required_days} days of balance coverage"
+    elif not raw_trigger:
         reason = "remaining_spend_limit is above threshold; no alert"
     elif de_duplication_would_block:
         reason = "below threshold but blocked by de-duplication; last alert was sent less than 24 hours ago"
@@ -175,17 +187,24 @@ def build_budget_alert_decision(snapshot: AccountBudgetSnapshot, state: dict[str
         previous_alert_state=previous_alert_state,
         trigger_by_days=trigger_by_days,
         trigger_by_amount=trigger_by_amount,
+        trigger_by_holiday=trigger_by_holiday,
+        holiday_risk=holiday_risk,
         final_trigger=raw_trigger and not de_duplication_would_block,
         de_duplication_would_block=de_duplication_would_block,
         final_reason=reason,
     )
 
 
-def update_account_state(state: dict[str, Any], snapshot: AccountBudgetSnapshot, alert_sent: bool = False) -> None:
+def update_account_state(state: dict[str, Any], snapshot: AccountBudgetSnapshot, alert_sent: bool = False, decision: BudgetAlertDecision | None = None) -> None:
     previous = state.get("accounts", {}).get(snapshot.account.account_id, {})
+    is_alerting = (
+        decision.trigger_by_days or decision.trigger_by_amount or decision.trigger_by_holiday
+        if decision is not None
+        else snapshot.should_alert
+    )
     record = {
         "name": snapshot.account.name,
-        "alerting": snapshot.should_alert,
+        "alerting": is_alerting,
         "last_checked_at": datetime.now().isoformat(timespec="seconds"),
         "last_balance": str(snapshot.current_balance),
         "last_average_daily_spend": str(snapshot.average_daily_spend),
@@ -195,9 +214,11 @@ def update_account_state(state: dict[str, Any], snapshot: AccountBudgetSnapshot,
         "amount_spent": str(snapshot.amount_spent),
         "currency": snapshot.currency,
     }
+    if decision and decision.holiday_risk:
+        record["holiday_risk_key"] = decision.holiday_risk.key
     if alert_sent:
         record["last_alert_sent_at"] = datetime.now().isoformat(timespec="seconds")
-    elif previous.get("last_alert_sent_at") and snapshot.should_alert:
+    elif previous.get("last_alert_sent_at") and record["alerting"]:
         record["last_alert_sent_at"] = previous["last_alert_sent_at"]
     state.setdefault("accounts", {})[snapshot.account.account_id] = record
 
@@ -410,7 +431,7 @@ def run_check_budget() -> int:
         if decision.final_trigger:
             previous_record = json.loads(json.dumps(state.get("accounts", {}).get(account.account_id))) if state.get("accounts", {}).get(account.account_id) is not None else None
             try:
-                update_account_state(state, snapshot, alert_sent=True)
+                update_account_state(state, snapshot, alert_sent=True, decision=decision)
                 save_state(STATE_FILE, state)
                 state_prepared_for_send = True
             except Exception as exc:
@@ -419,7 +440,7 @@ def run_check_budget() -> int:
                 append_budget_alert_log(log_payload(snapshot, decision, "NOT_ATTEMPTED_STATE_ERROR", False, run_start))
                 continue
             try:
-                delivery = notifier.send_budget_alert(snapshot)
+                delivery = notifier.send_budget_alert(snapshot, decision.holiday_risk)
             except FeishuError as exc:
                 had_error = True
                 if previous_record is None:
@@ -442,7 +463,7 @@ def run_check_budget() -> int:
             print(f"Trigger Reason: {decision.final_reason}")
 
         if not state_prepared_for_send:
-            update_account_state(state, snapshot, account_alert_sent)
+            update_account_state(state, snapshot, account_alert_sent, decision)
         state_updated = True
         append_budget_alert_log(log_payload(snapshot, decision, "SENT" if account_alert_sent else "NOT_SENT", True, run_start, delivery))
 
@@ -619,6 +640,8 @@ def log_payload(snapshot: AccountBudgetSnapshot, decision: BudgetAlertDecision, 
         "threshold_amount": str(snapshot.threshold),
         "trigger_by_days": decision.trigger_by_days,
         "trigger_by_amount": decision.trigger_by_amount,
+        "trigger_by_holiday": decision.trigger_by_holiday,
+        "holiday_risk": decision.holiday_risk.key if decision.holiday_risk else None,
         "final_trigger": decision.final_trigger,
         "de_duplication_would_block": decision.de_duplication_would_block,
         "final_reason": decision.final_reason,
