@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from config import AccountConfig
 from meta_data_provider import AccountMeta, InsightRecord, PeriodSpec
-from scheduled_reports import AccountReportRow, build_report_plan, ensure_schedule_fresh, fetch_period, format_report, judge_account, load_report_state, parse_as_of, performance_missing_reason, save_report_state, scheduled_time, write_log, write_skip_log
+from scheduled_reports import AccountReportRow, build_report_plan, delivery_note, ensure_schedule_fresh, fetch_period, format_report, judge_account, load_report_state, parse_as_of, performance_missing_reason, save_report_state, scheduled_time, write_log, write_skip_log
 
 
 PERF = AccountConfig("Performance", "1", "performance")
@@ -240,6 +240,14 @@ class ScheduledReportsTest(unittest.TestCase):
         with patch.dict(os.environ, {"ALLOW_STALE_SCHEDULED_REPORT": "true"}, clear=True):
             ensure_schedule_fresh(planned, actual)
 
+    def test_late_fallback_delivery_is_visible_in_report(self) -> None:
+        planned = datetime(2026, 7, 16, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+        actual = datetime(2026, 7, 16, 19, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+        with patch.dict(os.environ, {"SCHEDULED_TRIGGER_SOURCE": "schedule"}, clear=True):
+            note = delivery_note(planned, actual)
+        self.assertIn("Delayed fallback delivery: 255 minutes late", note)
+        self.assertIn("trigger schedule", note)
+
     def test_expected_windows_for_july_16_beijing_slots(self) -> None:
         tz = ZoneInfo("Asia/Shanghai")
         morning = build_report_plan("morning", "America/Phoenix", datetime(2026, 7, 16, 9, 0, tzinfo=tz))
@@ -322,7 +330,8 @@ class ScheduledReportsTest(unittest.TestCase):
         self.assertIn('cron: "30 7 * * *"', workflow)
         self.assertIn('cron: "0 10 * * *"', workflow)
         self.assertIn("report_mode:", workflow)
-        self.assertIn("ALLOW_STALE_SCHEDULED_REPORT:", workflow)
+        self.assertIn('ALLOW_STALE_SCHEDULED_REPORT: "true"', workflow)
+        self.assertIn("SCHEDULED_TRIGGER_SOURCE:", workflow)
         self.assertIn("scheduled-meta-reports-production", workflow)
         self.assertIn("scheduled-report-state-", workflow)
         self.assertIn("triggered_at:", workflow)

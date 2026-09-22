@@ -113,7 +113,7 @@ def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
     if all(row.current.data_status == "ERROR" for row in rows):
         message = "Meta Report Data Fetch Failed\n\n本次数据不可用于判断广告表现。"
     else:
-        message = format_report(plan, rows)
+        message = format_report(plan, rows, delivery_note(start, actual_start))
     data_ready_at = datetime.now(BEIJING_TZ)
     state.setdefault("runs", {})[run_key] = {"status": "SENDING", "updated_at": data_ready_at.isoformat(timespec="seconds")}
     save_report_state(state)
@@ -288,7 +288,16 @@ def ratio(value: Decimal | None, base: Decimal | None) -> Decimal | None:
     return value / base
 
 
-def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
+def delivery_note(planned_at: datetime, actual_start: datetime) -> str:
+    """Make fallback delivery timing visible to the report recipient."""
+    delay_seconds = max(0, int((actual_start.astimezone(BEIJING_TZ) - planned_at.astimezone(BEIJING_TZ)).total_seconds()))
+    source = os.getenv("SCHEDULED_TRIGGER_SOURCE", "unknown")
+    if delay_seconds <= 30 * 60:
+        return f"Delivery: on time · trigger {source}"
+    return f"⚠️ Delayed fallback delivery: {delay_seconds // 60} minutes late · trigger {source}"
+
+
+def format_report(plan: ReportPlan, rows: list[AccountReportRow], delivery_status: str | None = None) -> str:
     success = [row for row in rows if row.current.data_status == "SUCCESS"]
     confidence = data_confidence(plan, rows)
     total_spend = sum((decimal_or_zero(row.current.spend) for row in success), Decimal("0"))
@@ -309,6 +318,7 @@ def format_report(plan: ReportPlan, rows: list[AccountReportRow]) -> str:
         plan.title,
         "",
         f"Scheduled for: Beijing {plan.beijing_time.strftime('%Y-%m-%d %H:%M')}",
+        *( [delivery_status] if delivery_status else [] ),
         f"Data window: account date {plan.current_period.since}"
         + (f" to {plan.current_period.until}" if plan.current_period.until != plan.current_period.since else "")
         + (f", through hour {plan.account_local_time.hour:02d}:59 {plan.account_local_time.tzname()}" if plan.same_time_window else ", complete day"),
