@@ -17,7 +17,7 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 0 * * *"
     - cron: "30 7 * * *"
     - cron: "0 10 * * *"
 
@@ -65,7 +65,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             MODE="${{ inputs.report_mode }}"
-          elif [ "${{ github.event.schedule }}" = "0 1 * * *" ]; then
+          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
             MODE="morning"
           elif [ "${{ github.event.schedule }}" = "30 7 * * *" ]; then
             MODE="daily-close"

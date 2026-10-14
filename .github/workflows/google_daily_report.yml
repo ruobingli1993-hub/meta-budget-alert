@@ -1,0 +1,82 @@
+name: Google Daily Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Report mode"
+        required: true
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - daily-close
+      triggered_at:
+        description: "UTC timestamp supplied by the external scheduler"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "30 7 * * *"
+
+concurrency:
+  group: google-daily-report-production
+  cancel-in-progress: false
+
+jobs:
+  google-daily-report:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+      GOOGLE_ADS_CUSTOMER_IDS: ${{ secrets.GOOGLE_ADS_CUSTOMER_IDS }}
+      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+      TRIGGERED_AT: ${{ inputs.triggered_at || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve report mode
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
+            MODE="morning"
+          elif [ "${{ github.event.schedule }}" = "30 7 * * *" ]; then
+            MODE="daily-close"
+          else
+            echo "Unknown schedule: ${{ github.event.schedule }}"
+            exit 1
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+      - name: Run Google daily report
+        shell: bash
+        run: |
+          if [ "${{ steps.mode.outputs.mode }}" = "daily-close" ]; then
+            python google_daily_report.py --today --send
+          else
+            python google_daily_report.py --send
+          fi
+
+      - name: Upload report log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-daily-report-log-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 14

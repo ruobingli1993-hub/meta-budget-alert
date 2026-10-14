@@ -63,6 +63,12 @@ function dueJobs(beijing, manualTestJob = "") {
   if (["morning", "daily-close", "early-pulse"].includes(manualTestJob)) {
     return [reportJob(manualTestJob)];
   }
+  if (manualTestJob === "google-morning") {
+    return [{ key: "google-morning", workflow: "google_daily_report.yml", inputs: { mode: "morning" } }];
+  }
+  if (manualTestJob === "google-daily-close") {
+    return [{ key: "google-daily-close", workflow: "google_daily_report.yml", inputs: { mode: "daily-close" } }];
+  }
   if (beijing.minute === 15) {
     jobs.push({ key: `${String(beijing.hour).padStart(2, "0")}:budget-alert`, workflow: "check_budget.yml", inputs: {} });
   }
@@ -75,12 +81,18 @@ function dueJobs(beijing, manualTestJob = "") {
       jobs.push(reportJob(window.mode));
     }
   }
+  for (const window of googleReportRecoveryWindows()) {
+    const nowMinutes = beijing.hour * 60 + beijing.minute;
+    if (nowMinutes >= window.startMinutes && nowMinutes < window.endMinutes) {
+      jobs.push(googleReportJob(window.mode));
+    }
+  }
   return jobs;
 }
 
 function reportRecoveryWindows() {
   return [
-    { mode: "morning", startMinutes: 9 * 60, endMinutes: 12 * 60 },
+    { mode: "morning", startMinutes: 8 * 60, endMinutes: 12 * 60 },
     { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 18 * 60 },
     { mode: "early-pulse", startMinutes: 18 * 60, endMinutes: 21 * 60 },
   ];
@@ -88,6 +100,17 @@ function reportRecoveryWindows() {
 
 function reportJob(mode) {
   return { key: mode, workflow: "scheduled_reports.yml", inputs: { report_mode: mode } };
+}
+
+function googleReportRecoveryWindows() {
+  return [
+    { mode: "morning", startMinutes: 8 * 60, endMinutes: 10 * 60 },
+    { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 17 * 60 + 30 },
+  ];
+}
+
+function googleReportJob(mode) {
+  return { key: `google-${mode}`, workflow: "google_daily_report.yml", inputs: { mode } };
 }
 
 async function dispatchWorkflow(env, job, triggeredAt, runKey) {
@@ -129,4 +152,4 @@ function beijingParts(date) {
   return { date: `${value.year}-${value.month}-${value.day}`, hour: Number(value.hour), minute: Number(value.minute) };
 }
 
-export const __test = { beijingParts, dueJobs, reportRecoveryWindows };
+export const __test = { beijingParts, dueJobs, reportRecoveryWindows, googleReportRecoveryWindows };
