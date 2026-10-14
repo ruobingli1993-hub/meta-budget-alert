@@ -1,6 +1,7 @@
 name: Check Meta Ad Account Budget
 
 on:
+  # Keep this workflow active as the independent recovery path for budget alerts.
   schedule:
     # Primary: every hour at minute 17. Recovery: minute 47, and exits when primary succeeded.
     - cron: "17 * * * *"
