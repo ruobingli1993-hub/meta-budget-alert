@@ -17,7 +17,7 @@ jobs:
       GA4_CLIENT_SECRET: ${{ secrets.GA4_CLIENT_SECRET }}
       GA4_REFRESH_TOKEN: ${{ secrets.GA4_REFRESH_TOKEN }}
       GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID }}
-      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+      FEISHU_ALERT_WEBHOOK_URL: ${{ secrets.FEISHU_ALERT_WEBHOOK_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

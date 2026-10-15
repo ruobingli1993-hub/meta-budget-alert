@@ -177,10 +177,11 @@ def main() -> int:
     message = format_alert(result)
     print(message)
     if args.send:
-        if not os.getenv("FEISHU_WEBHOOK_URL"):
-            print("ERROR: FEISHU_WEBHOOK_URL empty", file=sys.stderr)
+        alert_webhook = os.getenv("FEISHU_ALERT_WEBHOOK_URL") or os.getenv("FEISHU_WEBHOOK_URL")
+        if not alert_webhook:
+            print("ERROR: FEISHU_ALERT_WEBHOOK_URL / FEISHU_WEBHOOK_URL empty", file=sys.stderr)
             return 1
-        delivery = FeishuWebhookClient().send_text(message)
+        delivery = FeishuWebhookClient(webhook_url=alert_webhook).send_text(message)
         print(f"[Sent] http_status={delivery['http_status']}")
     return 0
 
