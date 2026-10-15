@@ -11,6 +11,7 @@ on:
         options:
           - morning
           - daily-close
+          - evening
       triggered_at:
         description: "UTC timestamp supplied by the external scheduler"
         required: false
@@ -18,6 +19,7 @@ on:
   schedule:
     - cron: "0 0 * * *"
     - cron: "30 7 * * *"
+    - cron: "0 12 * * *"
 
 concurrency:
   group: google-daily-report-production
@@ -66,6 +68,8 @@ jobs:
             MODE="morning"
           elif [ "${{ github.event.schedule }}" = "30 7 * * *" ]; then
             MODE="daily-close"
+          elif [ "${{ github.event.schedule }}" = "0 12 * * *" ]; then
+            MODE="evening"
           else
             echo "Unknown schedule: ${{ github.event.schedule }}"
             exit 1
@@ -90,10 +94,10 @@ jobs:
         if: steps.dup.outputs.skip != 'true'
         shell: bash
         run: |
-          if [ "${{ steps.mode.outputs.mode }}" = "daily-close" ]; then
-            python google_daily_report.py --today --send
-          else
+          if [ "${{ steps.mode.outputs.mode }}" = "morning" ]; then
             python google_daily_report.py --send
+          else
+            python google_daily_report.py --today --send
           fi
 
       - name: Mark sent

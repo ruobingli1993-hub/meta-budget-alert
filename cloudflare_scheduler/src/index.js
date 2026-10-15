@@ -60,7 +60,7 @@ function dueJobs(beijing, manualTestJob = "") {
   if (manualTestJob === "budget-alert") {
     return [{ key: "manual-budget-alert", workflow: "check_budget.yml", inputs: {} }];
   }
-  if (["morning", "daily-close", "early-pulse"].includes(manualTestJob)) {
+  if (["morning", "daily-close", "early-pulse", "evening"].includes(manualTestJob)) {
     return [reportJob(manualTestJob)];
   }
   if (manualTestJob === "google-morning") {
@@ -95,6 +95,7 @@ function reportRecoveryWindows() {
     { mode: "morning", startMinutes: 8 * 60, endMinutes: 12 * 60 },
     { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 18 * 60 },
     { mode: "early-pulse", startMinutes: 18 * 60, endMinutes: 21 * 60 },
+    { mode: "evening", startMinutes: 20 * 60, endMinutes: 22 * 60 },
   ];
 }
 
@@ -106,6 +107,7 @@ function googleReportRecoveryWindows() {
   return [
     { mode: "morning", startMinutes: 8 * 60, endMinutes: 10 * 60 },
     { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 17 * 60 + 30 },
+    { mode: "evening", startMinutes: 20 * 60, endMinutes: 22 * 60 },
   ];
 }
 

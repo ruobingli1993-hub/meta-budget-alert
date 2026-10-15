@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--scheduled-report",
-        choices=["morning", "daily-close", "early-pulse"],
+        choices=["morning", "daily-close", "early-pulse", "evening"],
         help="Send a concise scheduled Meta report for the selected slot.",
     )
     parser.add_argument(

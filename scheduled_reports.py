@@ -16,7 +16,7 @@ from meta_api import MetaMarketingAPI
 from meta_data_provider import AccountMeta, InsightRecord, MetaDataProvider, PeriodSpec, decimal_or_zero, sum_records
 
 
-ReportMode = Literal["morning", "daily-close", "early-pulse"]
+ReportMode = Literal["morning", "daily-close", "early-pulse", "evening"]
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 SCHEDULED_REPORT_LOG = Path("logs/scheduled_reports.log")
 SCHEDULED_REPORT_STATE = Path(os.getenv("SCHEDULED_REPORT_STATE_FILE", "scheduled_report_state.json"))
@@ -71,6 +71,12 @@ def build_report_plan(mode: ReportMode, account_timezone: str = "America/Phoenix
         comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
         note = "当前仍处于广告日早期，仅用于监测启动情况，不建议依据当前 ROAS 做强调整。"
         return ReportPlan(mode, "Meta Early Pulse", "18:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "LOW", note)
+    if mode == "evening":
+        current = PeriodSpec("evening_same_time", today.isoformat(), today.isoformat(), includes_today=True)
+        comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
+        comp30 = PeriodSpec("last_30_same_time_average", (today - timedelta(days=30)).isoformat(), (today - timedelta(days=1)).isoformat())
+        note = "晚间实时：当日投放接近尾声，可作当天总结与明日预算参考。"
+        return ReportPlan(mode, "Meta Evening Realtime", "20:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, True, "HIGH", note)
     raise ValueError(f"Unsupported report mode: {mode}")
 
 
@@ -142,7 +148,7 @@ def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
 
 def scheduled_time(mode: ReportMode, observed_at: datetime) -> datetime:
     observed = observed_at.astimezone(BEIJING_TZ)
-    hour, minute = {"morning": (8, 0), "daily-close": (15, 30), "early-pulse": (18, 0)}[mode]
+    hour, minute = {"morning": (8, 0), "daily-close": (15, 30), "early-pulse": (18, 0), "evening": (20, 0)}[mode]
     scheduled = observed.replace(hour=hour, minute=minute, second=0, microsecond=0)
     # If a run is delayed past Beijing midnight, the latest occurrence of the
     # slot belongs to the previous calendar day, not to a future slot today.
