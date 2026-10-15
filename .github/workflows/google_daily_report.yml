@@ -35,9 +35,18 @@ jobs:
       GOOGLE_ADS_CUSTOMER_IDS: ${{ secrets.GOOGLE_ADS_CUSTOMER_IDS }}
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
       TRIGGERED_AT: ${{ inputs.triggered_at || '' }}
+      GOOGLE_REPORT_STATE_FILE: google_report_state.json
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore report send state
+        uses: actions/cache/restore@v4
+        with:
+          path: google_report_state.json
+          key: google-report-state-${{ github.run_id }}
+          restore-keys: |
+            google-report-state-
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -63,7 +72,22 @@ jobs:
           fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
+      - name: Check duplicate send
+        id: dup
+        shell: bash
+        run: |
+          RUN_KEY="$(date -u +%F):${{ steps.mode.outputs.mode }}"
+          echo "run_key=${RUN_KEY}" >> "$GITHUB_OUTPUT"
+          if [ -f "$GOOGLE_REPORT_STATE_FILE" ] && python3 -c "import json,sys; d=json.load(open('$GOOGLE_REPORT_STATE_FILE')); sys.exit(0 if '$RUN_KEY' in d.get('runs',{}) else 1)"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipped duplicate: ${RUN_KEY}"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Will send: ${RUN_KEY}"
+          fi
+
       - name: Run Google daily report
+        if: steps.dup.outputs.skip != 'true'
         shell: bash
         run: |
           if [ "${{ steps.mode.outputs.mode }}" = "daily-close" ]; then
@@ -71,6 +95,21 @@ jobs:
           else
             python google_daily_report.py --send
           fi
+
+      - name: Mark sent
+        if: steps.dup.outputs.skip != 'true'
+        shell: bash
+        run: |
+          python3 -c "import json,os; p='google_report_state.json'; d=json.load(open(p)) if os.path.exists(p) else {'runs':{}}; d.setdefault('runs',{})[os.environ['RUN_KEY']]='SENT'; json.dump(d, open(p,'w'))"
+        env:
+          RUN_KEY: ${{ steps.dup.outputs.run_key }}
+
+      - name: Save report send state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: google_report_state.json
+          key: google-report-state-${{ github.run_id }}
 
       - name: Upload report log
         if: always()
