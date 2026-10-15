@@ -1,0 +1,43 @@
+name: Funnel Alert
+
+on:
+  schedule:
+    - cron: "30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: funnel-alert-production
+  cancel-in-progress: false
+
+jobs:
+  funnel-alert:
+    runs-on: ubuntu-latest
+    env:
+      GA4_CLIENT_ID: ${{ secrets.GA4_CLIENT_ID }}
+      GA4_CLIENT_SECRET: ${{ secrets.GA4_CLIENT_SECRET }}
+      GA4_REFRESH_TOKEN: ${{ secrets.GA4_REFRESH_TOKEN }}
+      GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID }}
+      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run funnel alert
+        run: python funnel_alert.py --send
+
+      - name: Upload alert log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: funnel-alert-log-${{ github.run_id }}
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 14
