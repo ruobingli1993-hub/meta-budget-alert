@@ -107,6 +107,7 @@ function googleReportRecoveryWindows() {
   return [
     { mode: "morning", startMinutes: 8 * 60, endMinutes: 10 * 60 },
     { mode: "daily-close", startMinutes: 15 * 60 + 30, endMinutes: 17 * 60 + 30 },
+    { mode: "early-pulse", startMinutes: 18 * 60, endMinutes: 21 * 60 },
     { mode: "evening", startMinutes: 20 * 60, endMinutes: 22 * 60 },
   ];
 }

@@ -11,6 +11,7 @@ on:
         options:
           - morning
           - daily-close
+          - early-pulse
           - evening
       triggered_at:
         description: "UTC timestamp supplied by the external scheduler"
@@ -19,6 +20,7 @@ on:
   schedule:
     - cron: "0 0 * * *"
     - cron: "30 7 * * *"
+    - cron: "0 10 * * *"
     - cron: "0 12 * * *"
 
 concurrency:
@@ -68,6 +70,8 @@ jobs:
             MODE="morning"
           elif [ "${{ github.event.schedule }}" = "30 7 * * *" ]; then
             MODE="daily-close"
+          elif [ "${{ github.event.schedule }}" = "0 10 * * *" ]; then
+            MODE="early-pulse"
           elif [ "${{ github.event.schedule }}" = "0 12 * * *" ]; then
             MODE="evening"
           else
