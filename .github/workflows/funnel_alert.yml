@@ -1,8 +1,9 @@
 name: Funnel Alert
 
 on:
-  schedule:
-    - cron: "30 * * * *"
+  # 预警逻辑已停用（10-16）：加购/结账率波动过大，误报率高。保留手动触发以便需要时测试。
+  # schedule:
+  #   - cron: "30 * * * *"
   workflow_dispatch:
 
 concurrency:
