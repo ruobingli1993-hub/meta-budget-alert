@@ -117,6 +117,28 @@ class BucketDaily:
         return self.roas >= self.daily_threshold
 
 
+@dataclass(frozen=True)
+class PeriodSummary:
+    """某段时间的汇总指标（仅指标账户，不含养户）。"""
+    spend: Decimal
+    conversions: Decimal
+    conversion_value: Decimal
+
+    @property
+    def roas(self) -> Decimal:
+        return safe_div(self.conversion_value, self.spend)
+
+    @property
+    def roas(self) -> Decimal:
+        return safe_div(self.conversion_value, self.spend)
+
+    @property
+    def status_ok(self) -> bool | None:
+        if not self.within_scope or self.daily_threshold is None:
+            return None
+        return self.roas >= self.daily_threshold
+
+
 def safe_div(numerator: Decimal, denominator: Decimal) -> Decimal:
     if denominator == 0:
         return Decimal("0")
@@ -223,6 +245,66 @@ def fetch_account_daily(client, customer_id: str, date_str: str) -> list[Campaig
     return campaigns
 
 
+def fetch_account_range(
+    client, customer_id: str, start_date: str, end_date: str
+) -> dict[str, PeriodSummary]:
+    """拉指定日期范围内账户级汇总（不含养户账户），返回 {date_str: PeriodSummary}。"""
+    if customer_id in SPEND_ONLY_ACCOUNTS:
+        return {}
+    ga_service = client.get_service("GoogleAdsService")
+    query = f"""
+        SELECT
+          segments.date,
+          metrics.cost_micros,
+          metrics.conversions,
+          metrics.conversions_value
+        FROM campaign
+        WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'
+        ORDER BY segments.date
+    """
+    by_day: dict[str, PeriodSummary] = {}
+    stream = ga_service.search_stream(customer_id=customer_id, query=query)
+    for batch in stream:
+        for row in batch.results:
+            day = str(row.segments.date)
+            spend = micros_to_dollars(row.metrics.cost_micros)
+            conv = to_decimal(row.metrics.conversions)
+            value = to_decimal(row.metrics.conversions_value)
+            existing = by_day.get(day)
+            if existing is None:
+                by_day[day] = PeriodSummary(spend=spend, conversions=conv, conversion_value=value)
+            else:
+                by_day[day] = PeriodSummary(
+                    spend=existing.spend + spend,
+                    conversions=existing.conversions + conv,
+                    conversion_value=existing.conversion_value + value,
+                )
+    return by_day
+
+
+def fetch_hourly_spend(client, customer_id: str, date_str: str) -> dict[int, Decimal]:
+    """拉某一天的小时级花费，返回 {hour: spend}（小时为账户时区 0-23）。"""
+    if customer_id in SPEND_ONLY_ACCOUNTS:
+        return {}
+    ga_service = client.get_service("GoogleAdsService")
+    query = f"""
+        SELECT
+          segments.hour,
+          metrics.cost_micros
+        FROM campaign
+        WHERE segments.date = '{date_str}'
+        ORDER BY segments.hour
+    """
+    by_hour: dict[int, Decimal] = {}
+    stream = ga_service.search_stream(customer_id=customer_id, query=query)
+    for batch in stream:
+        for row in batch.results:
+            hour = int(row.segments.hour)
+            spend = micros_to_dollars(row.metrics.cost_micros)
+            by_hour[hour] = by_hour.get(hour, Decimal("0")) + spend
+    return by_hour
+
+
 def bucket_label(is_brand: bool, campaign_type: str) -> str:
     brand_mark = "Brand" if is_brand else "NonBrand"
     return f"{brand_mark} · {campaign_type}"
@@ -244,6 +326,10 @@ def build_report_text(
     results: list[tuple[str, list[CampaignDaily]]],
     failures: list[tuple[str, str]],
     date_str: str,
+    today_spend: Decimal = Decimal("0"),
+    yesterday_summary: PeriodSummary | None = None,
+    three_day_summary: PeriodSummary | None = None,
+    seven_day_summary: PeriodSummary | None = None,
 ) -> str:
     lines: list[str] = [f"Google Ads 日报 | {date_str}", ""]
 
@@ -265,6 +351,48 @@ def build_report_text(
         else:
             lines.append(f"  {name}：{fmt_money(spend)}")
     lines.append(f"  合计：{fmt_money(total_spend)}")
+
+    # ---- 花费环比 + ROI 达标对比 ----
+    yesterday_summary = yesterday_summary or PeriodSummary(Decimal("0"), Decimal("0"), Decimal("0"))
+    three_day_summary = three_day_summary or PeriodSummary(Decimal("0"), Decimal("0"), Decimal("0"))
+    seven_day_summary = seven_day_summary or PeriodSummary(Decimal("0"), Decimal("0"), Decimal("0"))
+
+    if yesterday_summary.spend > 0:
+        delta = (today_spend - yesterday_summary.spend) / yesterday_summary.spend * 100
+        sign = "+" if delta >= 0 else ""
+        lines.append(f"  花费对比昨天：{sign}{delta.quantize(Decimal('0.1'))}%")
+    else:
+        lines.append("  花费对比昨天：N/A（昨日无数据）")
+
+    # 加权门槛（和下面"账户加权目标"同一套口径）
+    metric_accounts = [(aid, c) for aid, c in results if aid not in SPEND_ONLY_ACCOUNTS]
+    scope_spend = Decimal("0")
+    scope_value = Decimal("0")
+    weighted_numerator_d1 = Decimal("0")
+    weighted_numerator_d3 = Decimal("0")
+    weighted_numerator_d7 = Decimal("0")
+    for _aid, campaigns in metric_accounts:
+        for c in campaigns:
+            if c.within_scope and c.target_roas is not None:
+                scope_spend += c.spend
+                scope_value += c.conversion_value
+                weighted_numerator_d1 += c.spend * c.target_roas * (Decimal("1") / DELAY_FACTOR_7)
+                weighted_numerator_d3 += c.spend * c.target_roas * (DELAY_FACTOR_3 / DELAY_FACTOR_7)
+                weighted_numerator_d7 += c.spend * c.target_roas * Decimal("1")
+
+    def _ok_mark(actual: Decimal, threshold: Decimal) -> str:
+        if threshold == 0:
+            return "—"
+        return "✅" if actual >= threshold else "⛔"
+
+    if scope_spend > 0:
+        d1_threshold = weighted_numerator_d1 / scope_spend
+        d3_threshold = weighted_numerator_d3 / scope_spend
+        d7_threshold = weighted_numerator_d7 / scope_spend
+        today_roas = safe_div(scope_value, scope_spend)
+        lines.append(f"  当天 ROI：{fmt_number(today_roas)}（门槛 {fmt_number(d1_threshold)}）{_ok_mark(today_roas, d1_threshold)}")
+        lines.append(f"  近3天 ROI：{fmt_number(three_day_summary.roas)}（门槛 {fmt_number(d3_threshold)}）{_ok_mark(three_day_summary.roas, d3_threshold)}")
+        lines.append(f"  近7天 ROI：{fmt_number(seven_day_summary.roas)}（门槛 {fmt_number(d7_threshold)}）{_ok_mark(seven_day_summary.roas, d7_threshold)}")
     lines.append("")
 
     # ---- 口径汇总（仅指标账户，跨账户合并）----
@@ -401,7 +529,79 @@ def run_daily_report(date_str: str | None = None, label: str | None = None) -> s
             failures.append((customer_id, f"{type(exc).__name__}: {exc}"))
             logger.error("Google daily report failed | account=%s | error=%s", customer_id, exc)
 
-    return build_report_text(results, failures, report_label)
+    # 拉近 7 天完整日数据，用于 3/7 天 ROI 对比
+    report_dt = date.fromisoformat(report_date)
+    range_start = (report_dt - timedelta(days=7)).isoformat()
+    range_end = (report_dt - timedelta(days=1)).isoformat()
+    by_day: dict[str, PeriodSummary] = {}
+    for customer_id in GOOGLE_ADS_CUSTOMER_IDS:
+        try:
+            for day, summary in fetch_account_range(client, customer_id, range_start, range_end).items():
+                existing = by_day.get(day)
+                if existing is None:
+                    by_day[day] = summary
+                else:
+                    by_day[day] = PeriodSummary(
+                        spend=existing.spend + summary.spend,
+                        conversions=existing.conversions + summary.conversions,
+                        conversion_value=existing.conversion_value + summary.conversion_value,
+                    )
+        except Exception as exc:
+            logger.warning("Range fetch failed for account %s: %s", customer_id, exc)
+
+    def _sum_days(days: list[str]) -> PeriodSummary:
+        spend = Decimal("0")
+        conv = Decimal("0")
+        value = Decimal("0")
+        for d in days:
+            s = by_day.get(d)
+            if s:
+                spend += s.spend
+                conv += s.conversions
+                value += s.conversion_value
+        return PeriodSummary(spend=spend, conversions=conv, conversion_value=value)
+
+    yesterday = (report_dt - timedelta(days=1)).isoformat()
+    day_before = (report_dt - timedelta(days=2)).isoformat()
+    three_days = [yesterday, day_before, (report_dt - timedelta(days=3)).isoformat()]
+    seven_days = [(report_dt - timedelta(days=i)).isoformat() for i in range(1, 8)]
+
+    # 同时段对比：今天到现在的花费 vs 昨天同时段花费
+    today_hourly: dict[int, Decimal] = {}
+    yesterday_hourly: dict[int, Decimal] = {}
+    for customer_id in GOOGLE_ADS_CUSTOMER_IDS:
+        try:
+            for h, s in fetch_hourly_spend(client, customer_id, report_date).items():
+                today_hourly[h] = today_hourly.get(h, Decimal("0")) + s
+        except Exception as exc:
+            logger.warning("Hourly fetch failed for today, account %s: %s", customer_id, exc)
+        try:
+            for h, s in fetch_hourly_spend(client, customer_id, yesterday).items():
+                yesterday_hourly[h] = yesterday_hourly.get(h, Decimal("0")) + s
+        except Exception as exc:
+            logger.warning("Hourly fetch failed for yesterday, account %s: %s", customer_id, exc)
+
+    today_spend = sum(today_hourly.values(), Decimal("0"))
+    # 昨天只取到今天已经过的小时数为止（同时段对比）
+    max_hour_today = max(today_hourly.keys()) if today_hourly else 0
+    yesterday_same_window_spend = sum(
+        s for h, s in yesterday_hourly.items() if h <= max_hour_today
+    )
+    yesterday_summary = PeriodSummary(
+        spend=yesterday_same_window_spend,
+        conversions=Decimal("0"),
+        conversion_value=Decimal("0"),
+    )
+    three_day_summary = _sum_days(three_days)
+    seven_day_summary = _sum_days(seven_days)
+
+    return build_report_text(
+        results, failures, report_label,
+        today_spend=today_spend,
+        yesterday_summary=yesterday_summary,
+        three_day_summary=three_day_summary,
+        seven_day_summary=seven_day_summary,
+    )
 
 
 def main() -> None:
