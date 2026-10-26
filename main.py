@@ -380,6 +380,7 @@ def run_check_budget() -> int:
     had_error = False
     any_alert_sent = False
     state_updated = False
+    heartbeat_rows: list[tuple[str, str, Decimal, str | None]] = []
 
     for account in ACCOUNTS:
         account_alert_sent = False
@@ -461,6 +462,8 @@ def run_check_budget() -> int:
             print(f"Alert sent: {account.name}")
         else:
             print(f"Trigger Reason: {decision.final_reason}")
+            days = f"{snapshot.estimated_days_remaining:.1f}天" if snapshot.estimated_days_remaining is not None else "N/A"
+            heartbeat_rows.append((account.name, snapshot.currency, snapshot.current_balance, days))
 
         if not state_prepared_for_send:
             update_account_state(state, snapshot, account_alert_sent, decision)
@@ -510,6 +513,26 @@ def run_check_budget() -> int:
 
     if not any_alert_sent and not had_error:
         print("No alert needed")
+        today_str = check_completed.date().isoformat()
+        if state.get("last_heartbeat_date") != today_str and heartbeat_rows:
+            try:
+                lines = [
+                    "Budget Alert 每日巡检",
+                    f"日期：{today_str}",
+                    "状态：全部账户余额健康",
+                    "",
+                ]
+                for name, currency, balance, days in heartbeat_rows:
+                    bal = money(balance, currency)
+                    lines.append(f"  · {name}：余额 {bal}，预计可跑 {days}")
+                lines.append("")
+                lines.append("系统每小时自动巡检，有异常会即时告警。")
+                FeishuWebhookClient().send_text("\n".join(lines))
+                state["last_heartbeat_date"] = today_str
+                save_state(STATE_FILE, state)
+                print(f"Heartbeat sent for {today_str}")
+            except FeishuError as exc:
+                print(f"Heartbeat send failed (non-blocking): {exc}")
 
     return 1 if had_error else 0
 
