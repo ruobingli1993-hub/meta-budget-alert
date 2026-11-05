@@ -43,10 +43,6 @@ class BudgetRecommendation:
     last_3d_purchase: str
     last_3d_purchase_value: str
     last_3d_roas: str | None
-    last_7d_spend: str = "N/A"
-    last_7d_purchase: str = "N/A"
-    last_7d_purchase_value: str = "N/A"
-    last_7d_roas: str | None = None
     today_spend: str
     today_purchase: str
     today_purchase_value: str
@@ -78,6 +74,10 @@ class BudgetRecommendation:
     parsed_today_checkout: str = "N/A"
     parsed_today_link_clicks: str = "N/A"
     regime_calculation_inputs: dict[str, Any] | None = None
+    last_7d_spend: str = "N/A"
+    last_7d_purchase: str = "N/A"
+    last_7d_purchase_value: str = "N/A"
+    last_7d_roas: str | None = None
 
 
 def preview() -> dict[str, Any]:
