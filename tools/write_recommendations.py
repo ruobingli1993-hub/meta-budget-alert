@@ -56,7 +56,12 @@ def write_recommendations_to_bitable(recommendations, run_id):
         entity_level = getattr(rec, "entity_level", "") or ""
         budget_model = getattr(rec, "budget_model", "") or ""
         cooldown = getattr(rec, "cooldown_status", "CLEAR") or "CLEAR"
-        regime = getattr(rec, "account_regime", "") or ""
+        rtg = getattr(rec, "rtg", "No") or "No"
+
+        # 受众：RTG=老客/再营销，否则新客
+        audience = "老客/再营销" if rtg == "Yes" else "新客"
+        # 目标ROAS：RTG 2.5，新客 2.0
+        target_roas = 2.5 if rtg == "Yes" else 2.0
 
         # 数据快照文本（近7天+今天漏斗）
         snap_parts = []
@@ -87,20 +92,20 @@ def write_recommendations_to_bitable(recommendations, run_id):
             "Meta对象ID": campaign_id or adset_id,
             "当前预算": float(current_budget),
             "建议预算": float(new_budget),
-            "审批状态": "待审批",
+            "审批状态": ["待审批"],
             "广告账户ID": account_id,
-            "决策": action,
+            "决策": [action],
             "调整幅度%": float(adj_pct),
             "决策理由": getattr(rec, "reason", ""),
-            # 补全以下字段
-            "账户": ACCOUNT_MAP.get(account_id, account_id),
-            "实体层级": entity_level,
-            "预算层级": budget_model,
-            "冷却状态": cooldown,
-            "规则版本": "shadow-v0.2",
+            "账户": [ACCOUNT_MAP.get(account_id, account_id)],
+            "实体层级": [entity_level],
+            "受众": [audience],
+            "目标ROAS": target_roas,
+            "预算层级": [budget_model],
+            "冷却状态": [cooldown],
             "扫描日期": now_ms,
             "数据快照": data_snapshot,
-            "总预算检查": "PASS",
+            "总预算检查": ["PASS"],
         }
 
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records"
