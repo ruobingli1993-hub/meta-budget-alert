@@ -210,13 +210,11 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         try:
             cb = float(getattr(rec, "current_budget", "0") or 0)
             nb = float(getattr(rec, "proposed_new_budget", "0") or 0)
-            # NO_CHANGE的实体，新预算等于旧预算
-            action = getattr(rec, "proposed_action", "")
-            if action == "NO_CHANGE" and cb > 0 and nb == 0:
+            # 如果新预算是0，就用旧预算代替（NO_CHANGE或者没设置的情况）
+            if cb > 0 and nb == 0:
                 nb = cb
-            if cb > 0:
-                total_current_budget += cb
-                total_new_budget += nb
+            total_current_budget += cb
+            total_new_budget += nb
         except:
             pass
 
