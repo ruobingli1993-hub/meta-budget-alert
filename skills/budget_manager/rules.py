@@ -205,11 +205,16 @@ def evaluate_entity(
     action = "NO_CHANGE"
     reason = "Default NO_CHANGE."
     if budget_model == "ABO" and entity_level == "Ad Set":
-        if last_3d.roas < Decimal("2.0") and today.roas <= Decimal("2.0"):
+        if last_3d.roas > Decimal("2.5") and today.roas > Decimal("2.5") and last_3d.purchase >= Decimal("2") and today.purchase >= Decimal("1"):
+            action = config["actions_by_regime"]["abo_increase"].get(account_regime, "NO_CHANGE")
+            reason = "ABO Ad Set 3D and today ROAS are both high."
+        elif last_3d.roas < Decimal("2.0") and today.roas <= Decimal("2.0"):
             action = config["actions_by_regime"]["abo_decrease"].get(account_regime, "NO_CHANGE")
             reason = "ABO Ad Set 3D and today ROAS are both low."
         elif last_3d.roas < Decimal("2.0") and today.roas > Decimal("2.0"):
             reason = "Today performance recovered; no decrease."
+        else:
+            reason = "ABO Ad Set ROAS in normal range."
     elif budget_model == "CBO" and entity_level == "Campaign" and rtg:
         if last_3d.roas > Decimal("3.5") and last_3d.purchase >= Decimal("2") and today.roas >= Decimal("3.0") and today.purchase >= Decimal("1"):
             action = config["actions_by_regime"]["rtg_cbo_increase"].get(account_regime, "NO_CHANGE")
