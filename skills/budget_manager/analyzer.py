@@ -211,11 +211,11 @@ def preview() -> dict[str, Any]:
         
         # 综合判断：3天为主，今天为辅
         # 3天ROI超过目标25%，且今天ROI也不错（不低于目标的80%）→ 放量模式
-        if roas_3d > target_roas * (1 + threshold) and roas_today >= target_roas * 0.8:
+        if roas_3d > target_roas * (1 + threshold) and roas_today >= target_roas * Decimal("0.8"):
             auto_mode = "aggressive"
             mode_reason = f"老客占比{rtg_ratio:.0%}，加权目标{target_roas:.2f} | 3天ROI {roas_3d:.2f} > 目标*1.25，今天{roas_today:.2f}也不错，自动切换为放量模式"
         # 3天ROI低于目标25%，且今天ROI也差（不高于目标的120%）→ 保守模式
-        elif roas_3d < target_roas * (1 - threshold) and roas_today <= target_roas * 1.2:
+        elif roas_3d < target_roas * (1 - threshold) and roas_today <= target_roas * Decimal("1.2"):
             auto_mode = "conservative"
             mode_reason = f"老客占比{rtg_ratio:.0%}，加权目标{target_roas:.2f} | 3天ROI {roas_3d:.2f} < 目标*0.75，今天{roas_today:.2f}也偏差，自动切换为保守模式"
         else:
