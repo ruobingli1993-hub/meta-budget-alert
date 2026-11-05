@@ -235,7 +235,7 @@ def main():
     success_list = []
     fail_list = []
 
-    # 1. 执行新同意的
+    # 执行已同意的
     approved = list_records_by_status(token, "已同意")
     print(f"找到 {len(approved)} 条「已同意」记录")
     for rec in approved:
@@ -248,33 +248,18 @@ def main():
             print(f"  ❌ 单条执行异常: {e}")
             fail_count += 1
             f = rec["fields"]
-            fail_list.append(f"{f.get('实体名称', '?')}: {str(e)[:50]}")
+            fail_list.append(f"{f.get('实体名称', '?')}: {str(e)[:80]}")
 
-    # 2. 重试之前失败的（最多3次）
-    failed = list_records_by_status(token, "执行失败")
-    print(f"找到 {len(failed)} 条「执行失败」记录，开始重试")
-    for rec in failed:
-        try:
-            execute_one(token, rec)
-            success_count += 1
-            f = rec["fields"]
-            success_list.append(f"[重试成功] {f.get('实体名称', '?')}")
-        except Exception as e:
-            print(f"  ❌ 重试失败: {e}")
-            fail_count += 1
-            f = rec["fields"]
-            fail_list.append(f"[重试失败] {f.get('实体名称', '?')}: {str(e)[:50]}")
-
-    # 3. 发消息
+    # 发消息
     if success_count > 0 or fail_count > 0:
         msg = f"=== 调价执行完成 ===\n"
         msg += f"成功: {success_count} 条\n"
         if success_list:
-            for s in success_list[:5]:
+            for s in success_list:
                 msg += f"  ✅ {s}\n"
         if fail_count > 0:
             msg += f"\n失败: {fail_count} 条\n"
-            for f in fail_list[:5]:
+            for f in fail_list:
                 msg += f"  ❌ {f}\n"
         try:
             send_feishu_message(token, msg)
