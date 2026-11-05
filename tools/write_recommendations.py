@@ -73,7 +73,7 @@ def write_recommendations_to_bitable(recommendations, run_id):
             entity_name = f"{campaign_name} > {adset_name}"
             meta_object_id = adset_id or campaign_id
         else:
-            entity_name = campaign_name
+            entity_name = f"{campaign_name} > CBO整体"
             meta_object_id = campaign_id or adset_id
 
         # 受众：RTG=老客/再营销，否则新客
