@@ -1,7 +1,11 @@
 {
-  "rule_version": "budget_manager_v1",
+  "rule_version": "budget_manager_v2",
+  "mode": "normal",
   "target_purchase_roas": 3.0,
   "minimum_daily_budget_usd": 80,
+  "budget_floor_usd": 80,
+  "budget_cap_usd": 3500,
+  "max_rtg_budget_ratio": 0.3,
   "preview_log_dir": "logs/budget_previews",
   "run_report_dir": "logs/budget_runs",
   "manager_log_path": "logs/budget_manager.log",

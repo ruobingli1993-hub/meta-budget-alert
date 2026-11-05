@@ -131,6 +131,33 @@ def pct_from_action(action: str) -> Decimal:
     return Decimal("0")
 
 
+def adjust_action_by_mode(action: str, mode: str) -> str:
+    """根据模式调整动作档位
+    aggressive: 放量大一档，缩量小一档
+    conservative: 放量小一档，缩量大一档
+    """
+    if mode == "normal" or action not in INCREASE_ACTIONS and action not in DECREASE_ACTIONS:
+        return action
+    
+    increase_order = ["INCREASE_10", "INCREASE_15", "INCREASE_20", "INCREASE_25"]
+    decrease_order = ["DECREASE_10", "DECREASE_15", "DECREASE_20", "DECREASE_25"]
+    
+    if action in increase_order:
+        idx = increase_order.index(action)
+        if mode == "aggressive" and idx < len(increase_order) - 1:
+            return increase_order[idx + 1]  # 往大调一档
+        elif mode == "conservative" and idx > 0:
+            return increase_order[idx - 1]  # 往小调一档
+    elif action in decrease_order:
+        idx = decrease_order.index(action)
+        if mode == "aggressive" and idx > 0:
+            return decrease_order[idx - 1]  # 往小调一档（缩量更小）
+        elif mode == "conservative" and idx < len(decrease_order) - 1:
+            return decrease_order[idx + 1]  # 往大调一档（缩量更大）
+    
+    return action
+
+
 def proposed_budget(current_budget: Decimal | None, action: str, config: dict[str, Any]) -> Decimal | None:
     if current_budget is None or action in NO_WRITE_ACTIONS:
         return None
@@ -210,6 +237,15 @@ def evaluate_entity(
     if rtg and action in INCREASE_ACTIONS and rtg_budget_ratio > max_rtg_ratio:
         action = "NO_CHANGE"
         reason = f"老客预算占比已达{rtg_budget_ratio:.1%}，超过{max_rtg_ratio:.0%}上限，不再加预算。"
+
+    # 根据模式调整动作档位
+    mode = config.get("mode", "normal")
+    if mode != "normal" and action not in NO_WRITE_ACTIONS:
+        original_action = action
+        action = adjust_action_by_mode(action, mode)
+        if original_action != action:
+            mode_name = "放量模式" if mode == "aggressive" else "保守模式"
+            reason = f"{mode_name}：动作从{original_action}调整为{action}。"
 
     return decision(action, current_budget, config, reason, funnel_anomaly, funnel_reason)
 
