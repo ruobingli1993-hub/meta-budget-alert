@@ -70,7 +70,7 @@ def write_recommendations_to_bitable(recommendations, run_id):
         adset_name = getattr(rec, "adset_name", None)
         campaign_name = getattr(rec, "campaign_name", "") or ""
         if entity_level == "Ad Set" and adset_name:
-            entity_name = adset_name
+            entity_name = f"{campaign_name} > {adset_name}"
             meta_object_id = adset_id or campaign_id
         else:
             entity_name = campaign_name
