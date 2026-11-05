@@ -66,6 +66,12 @@ def write_recommendations_to_bitable(recommendations, run_id):
         adset_id = getattr(rec, "adset_id", "") or ""
         current_budget = getattr(rec, "current_budget", "0") or "0"
         new_budget = getattr(rec, "proposed_new_budget", "0") or "0"
+        # NO_CHANGE或者新预算为0时，建议预算就写当前预算，符合逻辑
+        try:
+            if float(new_budget or 0) == 0:
+                new_budget = current_budget
+        except:
+            new_budget = current_budget
         adj_pct = getattr(rec, "adjustment_percentage", "0") or "0"
         account_id = getattr(rec, "account_id", "") or ""
         entity_level = getattr(rec, "entity_level", "") or ""
