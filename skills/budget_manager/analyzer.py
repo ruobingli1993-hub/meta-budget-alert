@@ -43,6 +43,10 @@ class BudgetRecommendation:
     last_3d_purchase: str
     last_3d_purchase_value: str
     last_3d_roas: str | None
+    last_7d_spend: str = "N/A"
+    last_7d_purchase: str = "N/A"
+    last_7d_purchase_value: str = "N/A"
+    last_7d_roas: str | None = None
     today_spend: str
     today_purchase: str
     today_purchase_value: str
@@ -112,10 +116,11 @@ def preview() -> dict[str, Any]:
         FeishuWebhookClient().send_text(feishu_message)
         print("Feishu preview sent...")
     except Exception as exc:
-        status = "FAILED"
-        errors.append(type(exc).__name__)
-        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_ERROR", "error": type(exc).__name__})
-        raise
+        # webhook发送失败不影响主流程，影子扫描本身已经完成
+        status = "SUCCESS"
+        errors.append(f"Feishu webhook failed (ignored): {type(exc).__name__}")
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_WARNING", "error": type(exc).__name__})
+        print(f"Warning: Feishu webhook send failed (ignored): {type(exc).__name__}")
     finally:
         end_time = datetime.now().isoformat(timespec="seconds")
         report_path = audit.save_run_report(config, run_id, "preview", start_time, end_time, status, snapshot["recommendations"], errors)
@@ -184,9 +189,11 @@ def analyze_entity(
     last_3d_record = provider.get_insights(account, provider_level, "last_3_complete_days", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
     today_record = provider.get_insights(account, provider_level, "today", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
     avg_30d_record = provider.get_insights(account, provider_level, "last_30_complete_days", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
+    last_7d_record = provider.get_insights(account, provider_level, "last_7_complete_days", entity_id=entity.entity_id, entity_name=entity.entity_name)[0]
     last_3d = metric_window(last_3d_record)
     today = metric_window(today_record)
     avg_30d = metric_window(avg_30d_record)
+    last_7d = metric_window(last_7d_record)
     rtg = rules.is_rtg(campaign.entity_name, config)
     confidence = "HIGH" if last_3d_record.data_status == "SUCCESS" and today_record.data_status == "SUCCESS" and rules.has_last_3d_sample(last_3d, config) and rules.has_today_sample(today, config) else "LOW"
     if last_3d_record.data_status == "ERROR" or today_record.data_status == "ERROR" or avg_30d_record.data_status == "ERROR":
@@ -216,6 +223,10 @@ def analyze_entity(
         last_3d_purchase=fmt_decimal(last_3d.purchase),
         last_3d_purchase_value=fmt_decimal(last_3d.purchase_value),
         last_3d_roas=fmt_optional(last_3d.roas),
+        last_7d_spend=fmt_decimal(last_7d.spend),
+        last_7d_purchase=fmt_decimal(last_7d.purchase),
+        last_7d_purchase_value=fmt_decimal(last_7d.purchase_value),
+        last_7d_roas=fmt_optional(last_7d.roas),
         today_spend=fmt_decimal(today.spend),
         today_purchase=fmt_decimal(today.purchase),
         today_purchase_value=fmt_decimal(today.purchase_value),
