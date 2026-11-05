@@ -206,15 +206,17 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         else:
             no_change_count += 1
 
-        # 统计预算
-        try:
-            cb = float(getattr(rec, "current_budget", "0") or 0)
-            nb = float(getattr(rec, "proposed_new_budget", "0") or 0)
-            if cb > 0:
-                total_current_budget += cb
-                total_new_budget += nb
-        except:
-            pass
+        # 统计预算（只算Campaign层级，避免Ad Set重复计算）
+        entity_level = getattr(rec, "entity_level", "")
+        if entity_level == "Campaign":
+            try:
+                cb = float(getattr(rec, "current_budget", "0") or 0)
+                nb = float(getattr(rec, "proposed_new_budget", "0") or 0)
+                if cb > 0:
+                    total_current_budget += cb
+                    total_new_budget += nb
+            except:
+                pass
 
     overall_roas = total_purchase_value / total_spend if total_spend > 0 else 0
     # 预算调整比例
