@@ -12,6 +12,8 @@
   "accounts": [
     {
       "name": "US Main",
+      "current_budget": 900,
+      "suggested_budget": 1035,
       "today_spend": 850,
       "today_roas": 3.6,
       "today_purchase": 28,
@@ -21,6 +23,8 @@
     },
     {
       "name": "EU Main",
+      "current_budget": 650,
+      "suggested_budget": 748,
       "today_spend": 620,
       "today_roas": 3.2,
       "today_purchase": 18,
@@ -30,6 +34,8 @@
     },
     {
       "name": "RTG Retargeting",
+      "current_budget": 400,
+      "suggested_budget": 460,
       "today_spend": 380,
       "today_roas": 4.5,
       "today_purchase": 22,
@@ -39,6 +45,8 @@
     },
     {
       "name": "CA Main",
+      "current_budget": 150,
+      "suggested_budget": 135,
       "today_spend": 120,
       "today_roas": 2.1,
       "today_purchase": 3,

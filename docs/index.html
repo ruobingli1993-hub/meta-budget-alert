@@ -69,6 +69,9 @@
             <thead>
                 <tr>
                     <th>账户</th>
+                    <th>当前预算</th>
+                    <th>建议预算</th>
+                    <th>调整幅度</th>
                     <th>今天花费</th>
                     <th>今天ROI</th>
                     <th>今天购买</th>
@@ -171,8 +174,19 @@
                         : acc.status === 'bad' 
                         ? '<span class="tag tag-red">表现差</span>' 
                         : '<span class="tag tag-gray">正常</span>';
+                    
+                    // 计算调整幅度
+                    let changePct = '';
+                    if (acc.current_budget && acc.suggested_budget) {
+                        const pct = ((acc.suggested_budget - acc.current_budget) / acc.current_budget * 100).toFixed(0);
+                        changePct = pct > 0 ? `+${pct}%` : `${pct}%`;
+                    }
+                    
                     row.innerHTML = `
                         <td>${acc.name}</td>
+                        <td>$${acc.current_budget ? acc.current_budget.toFixed(0) : '--'}</td>
+                        <td>$${acc.suggested_budget ? acc.suggested_budget.toFixed(0) : '--'}</td>
+                        <td style="color: ${changePct.includes('+') ? '#34c724' : changePct.includes('-') ? '#f54a45' : '#646a73'}">${changePct || '--'}</td>
                         <td>$${acc.today_spend.toFixed(0)}</td>
                         <td>${acc.today_roas ? acc.today_roas.toFixed(2) : '--'}</td>
                         <td>${acc.today_purchase}</td>
@@ -182,6 +196,36 @@
                     `;
                     tableBody.appendChild(row);
                 });
+                
+                // Overall合计行
+                const totalCurrentBudget = data.accounts.reduce((sum, acc) => sum + (acc.current_budget || 0), 0);
+                const totalSuggestedBudget = data.accounts.reduce((sum, acc) => sum + (acc.suggested_budget || 0), 0);
+                const totalSpend = data.accounts.reduce((sum, acc) => sum + (acc.today_spend || 0), 0);
+                const totalPurchase = data.accounts.reduce((sum, acc) => sum + (acc.today_purchase || 0), 0);
+                const totalRoas = totalSpend > 0 ? (totalPurchase * 50) / totalSpend : 0; // 示例计算
+                
+                let overallChangePct = '';
+                if (totalCurrentBudget > 0 && totalSuggestedBudget > 0) {
+                    const pct = ((totalSuggestedBudget - totalCurrentBudget) / totalCurrentBudget * 100).toFixed(0);
+                    overallChangePct = pct > 0 ? `+${pct}%` : `${pct}%`;
+                }
+                
+                const totalRow = document.createElement('tr');
+                totalRow.style.background = '#f5f6f7';
+                totalRow.style.fontWeight = '600';
+                totalRow.innerHTML = `
+                    <td>Overall</td>
+                    <td>$${totalCurrentBudget.toFixed(0)}</td>
+                    <td>$${totalSuggestedBudget.toFixed(0)}</td>
+                    <td style="color: ${overallChangePct.includes('+') ? '#34c724' : overallChangePct.includes('-') ? '#f54a45' : '#646a73'}">${overallChangePct || '--'}</td>
+                    <td>$${totalSpend.toFixed(0)}</td>
+                    <td>${totalRoas.toFixed(2)}</td>
+                    <td>${totalPurchase}</td>
+                    <td>--</td>
+                    <td>--</td>
+                    <td>--</td>
+                `;
+                tableBody.appendChild(totalRow);
 
                 // 窗口大小变化时重绘图表
                 window.addEventListener('resize', () => {
