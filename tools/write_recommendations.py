@@ -45,8 +45,14 @@ def write_recommendations_to_bitable(recommendations, run_id):
 
     for rec in recommendations:
         action = getattr(rec, "proposed_action", "")
-        if action not in all_actions:
-            continue
+
+        # 决定审批状态
+        if action in increase_actions or action in decrease_actions:
+            approval_status = "待审批"
+        elif action == "NO_CHANGE":
+            approval_status = "不调整"
+        else:
+            approval_status = "数据异常"
 
         # 从action（如"INCREASE_15"）拆出决策类型
         if action.startswith("INCREASE"):
@@ -126,7 +132,7 @@ def write_recommendations_to_bitable(recommendations, run_id):
             "Meta对象ID": meta_object_id,
             "当前预算": float(current_budget),
             "建议预算": float(new_budget),
-            "审批状态": "待审批",
+            "审批状态": approval_status,
             "广告账户ID": account_id,
             "决策": decision_type,
             "调整幅度%": float(adj_pct),
