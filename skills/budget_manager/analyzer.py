@@ -106,6 +106,8 @@ def preview() -> dict[str, Any]:
         total_3d_purchase_value = Decimal("0")
         total_today_spend = Decimal("0")
         total_today_purchase_value = Decimal("0")
+        total_budget = Decimal("0")
+        rtg_total_budget = Decimal("0")
         for rec in recommendations:
             try:
                 if rec.entity_level == "Campaign":
@@ -115,26 +117,36 @@ def preview() -> dict[str, Any]:
                     if rec.today_spend != "N/A":
                         total_today_spend += Decimal(str(rec.today_spend))
                         total_today_purchase_value += Decimal(str(rec.today_purchase_value))
+                    if rec.current_budget != "N/A" and rec.current_budget is not None:
+                        total_budget += Decimal(str(rec.current_budget))
+                        if rec.rtg == "Yes":
+                            rtg_total_budget += Decimal(str(rec.current_budget))
             except:
                 pass
         
         roas_3d = total_3d_purchase_value / total_3d_spend if total_3d_spend > 0 else Decimal("0")
         roas_today = total_today_purchase_value / total_today_spend if total_today_spend > 0 else Decimal("0")
-        target_roas = Decimal(str(config["target_purchase_roas"]))
+        
+        # 加权计算整体ROI目标：老客占比×老客目标 + 新客占比×新客目标
+        rtg_ratio = rtg_total_budget / total_budget if total_budget > 0 else Decimal("0.25")
+        target_rtg = Decimal(str(config.get("target_roas_rtg", 2.5)))
+        target_non_rtg = Decimal(str(config.get("target_roas_non_rtg", 2.0)))
+        target_roas = rtg_ratio * target_rtg + (1 - rtg_ratio) * target_non_rtg
+        
         threshold = Decimal(str(config.get("auto_mode_threshold", 0.25)))
         
         # 综合判断：3天为主，今天为辅
         # 3天ROI超过目标25%，且今天ROI也不错（不低于目标的80%）→ 放量模式
         if roas_3d > target_roas * (1 + threshold) and roas_today >= target_roas * 0.8:
             auto_mode = "aggressive"
-            mode_reason = f"3天ROI {roas_3d:.2f} > 目标{target_roas}*1.25，今天{roas_today:.2f}也不错，自动切换为放量模式"
+            mode_reason = f"老客占比{rtg_ratio:.0%}，加权目标{target_roas:.2f} | 3天ROI {roas_3d:.2f} > 目标*1.25，今天{roas_today:.2f}也不错，自动切换为放量模式"
         # 3天ROI低于目标25%，且今天ROI也差（不高于目标的120%）→ 保守模式
         elif roas_3d < target_roas * (1 - threshold) and roas_today <= target_roas * 1.2:
             auto_mode = "conservative"
-            mode_reason = f"3天ROI {roas_3d:.2f} < 目标{target_roas}*0.75，今天{roas_today:.2f}也偏差，自动切换为保守模式"
+            mode_reason = f"老客占比{rtg_ratio:.0%}，加权目标{target_roas:.2f} | 3天ROI {roas_3d:.2f} < 目标*0.75，今天{roas_today:.2f}也偏差，自动切换为保守模式"
         else:
             auto_mode = "normal"
-            mode_reason = f"3天ROI {roas_3d:.2f}、今天{roas_today:.2f}在目标范围内，保持正常模式"
+            mode_reason = f"老客占比{rtg_ratio:.0%}，加权目标{target_roas:.2f} | 3天ROI {roas_3d:.2f}、今天{roas_today:.2f}在目标范围内，保持正常模式"
         
         print(f"Auto mode: {auto_mode} - {mode_reason}")
         config["mode"] = auto_mode  # 写回config，供后续规则使用
