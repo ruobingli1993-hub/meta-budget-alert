@@ -80,10 +80,79 @@ class BudgetRecommendation:
     last_7d_roas: str | None = None
 
 
+def load_rules_from_bitable(config: dict[str, Any]) -> dict[str, Any]:
+    """从多维表读取预算规则，覆盖config里的对应值"""
+    import requests
+    base_token = "TivqbYjK9a2DRbsfVs7cdlo9nJg"
+    app_id = "cli_aa63716f7cb85bf6"
+    app_secret = "U8GuxHNk4Cul12kB0038WgJo6L8t5Oon"
+    
+    try:
+        # 获取token
+        token_resp = requests.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret}
+        ).json()
+        token = token_resp["tenant_access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # 找"预算规则设置"表
+        tables_resp = requests.get(
+            f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables",
+            headers=headers
+        ).json()
+        table_id = None
+        for t in tables_resp["data"]["items"]:
+            if t["name"] == "预算规则设置":
+                table_id = t["table_id"]
+                break
+        if not table_id:
+            print("Warning: 预算规则设置表不存在，使用config默认值")
+            return config
+        
+        # 读所有规则
+        records_resp = requests.get(
+            f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records?page_size=20",
+            headers=headers
+        ).json()
+        
+        rules_map = {}
+        for item in records_resp["data"]["items"]:
+            name = item["fields"].get("规则名称", "")
+            value = item["fields"].get("当前值", "")
+            if isinstance(value, list) and len(value) > 0:
+                value = value[0].get("text", str(value))
+            rules_map[name] = str(value).strip()
+        
+        print(f"从多维表读到{len(rules_map)}条规则")
+        
+        # 覆盖config
+        if "当前模式" in rules_map:
+            config["mode"] = rules_map["当前模式"]
+        if "老客ROI目标" in rules_map:
+            config["target_roas_rtg"] = float(rules_map["老客ROI目标"])
+        if "新客ROI目标" in rules_map:
+            config["target_roas_non_rtg"] = float(rules_map["新客ROI目标"])
+        if "总预算上限" in rules_map:
+            config["budget_cap_usd"] = float(rules_map["总预算上限"])
+        if "最低日预算地板" in rules_map:
+            config["budget_floor_usd"] = float(rules_map["最低日预算地板"])
+        if "老客预算占比上限" in rules_map:
+            config["max_rtg_budget_ratio"] = float(rules_map["老客预算占比上限"].replace("%", "")) / 100
+        
+        print(f"当前模式: {config['mode']}, 总预算上限: ${config.get('budget_cap_usd', 'N/A')}")
+        return config
+        
+    except Exception as e:
+        print(f"Warning: 从多维表读规则失败({e})，使用config默认值")
+        return config
+
+
 def preview() -> dict[str, Any]:
     print("Budget Manager Started")
     print("Loading configuration...")
     config = rules.load_config()
+    config = load_rules_from_bitable(config)  # 从多维表读规则覆盖
     api = MetaMarketingAPI(META_ACCESS_TOKEN)
     provider = MetaDataProvider(api)
     run_id = "budget_" + datetime.now().strftime("%Y%m%d_%H%M%S")
