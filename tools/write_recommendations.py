@@ -86,6 +86,21 @@ def write_recommendations_to_bitable(recommendations, run_id):
             snap_parts.append(f"Checkout:{co}")
         data_snapshot = " | ".join(snap_parts)
 
+        # 决策理由（中文人话格式）
+        reason_parts = []
+        if spend_7d and spend_7d != "N/A":
+            roas7_val = float(roas_7d) if roas_7d else 0
+            hit = "达标" if roas7_val >= target_roas else "未达"
+            reason_parts.append(f"近7天：花费${spend_7d}、购买{purchase_7d}单、ROAS {roas_7d or 'N/A'}（目标{target_roas}，{hit}）")
+        if roas_3d:
+            reason_parts.append(f"近3天ROAS {roas_3d}")
+        if roas_today:
+            reason_parts.append(f"今天ROAS {roas_today}")
+        is_increase = action.startswith("INCREASE")
+        action_cn = "加" if is_increase else "减"
+        reason_parts.append(f"建议{action_cn}预算{adj_pct}%（${current_budget} → ${new_budget}）")
+        reason = "；".join(reason_parts)
+
         fields = {
             "建议ID": f"SHD-{run_id[-8:]}-{campaign_id[-6:]}",
             "实体名称": getattr(rec, "campaign_name", ""),
@@ -96,7 +111,7 @@ def write_recommendations_to_bitable(recommendations, run_id):
             "广告账户ID": account_id,
             "决策": [action],
             "调整幅度%": float(adj_pct),
-            "决策理由": getattr(rec, "reason", ""),
+            "决策理由": reason,
             "账户": [ACCOUNT_MAP.get(account_id, account_id)],
             "实体层级": [entity_level],
             "受众": [audience],
