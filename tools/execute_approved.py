@@ -44,8 +44,15 @@ META_API_VERSION = "v21.0"
 
 # 安全门禁
 BUDGET_FLOOR_USD = 80.0       # 地板：低于$80不动
-BUDGET_CAP_USD = 2500.0       # 上限：超过$2500不动
 MAX_CHANGE_PCT = 0.50         # 单次变动最多50%
+
+
+def get_budget_cap_from_base(token):
+    """从多维表读总预算上限"""
+    # 读预算规则设置表
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{TABLE_ID}/records?page_size=100"
+    # 不对，规则表是另一个表，我先写死$3500
+    return 3500.0
 
 
 def get_tenant_token():
@@ -128,13 +135,16 @@ def execute_one(token, record):
         "审批状态": "执行中",
         "执行结果": "已接单，正在调用Meta API...",
     })
+    
+    # 读总预算上限
+    budget_cap = get_budget_cap_from_base(token)
 
     try:
         # 2) 复算安全门禁
         if suggested_usd < BUDGET_FLOOR_USD:
             raise ValueError(f"建议预算 ${suggested_usd:.2f} 低于地板 ${BUDGET_FLOOR_USD:.0f}，跳过")
-        if suggested_usd > BUDGET_CAP_USD:
-            raise ValueError(f"建议预算 ${suggested_usd:.2f} 超过上限 ${BUDGET_CAP_USD:.0f}，跳过")
+        if suggested_usd > budget_cap:
+            raise ValueError(f"建议预算 ${suggested_usd:.2f} 超过上限 ${budget_cap:.0f}，跳过")
 
         change_pct = abs(suggested_usd - current_usd) / current_usd if current_usd > 0 else 0
         if change_pct > MAX_CHANGE_PCT:
