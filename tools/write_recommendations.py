@@ -25,24 +25,33 @@ def write_recommendations_to_bitable(recommendations, run_id):
     token = get_tenant_token()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    increase_actions = {"INCREASE_10", "INCREASE_15", "INCREASE_20", "INCREASE_25"}
+    decrease_actions = {"DECREASE_10", "DECREASE_15", "DECREASE_20", "DECREASE_25"}
+    all_actions = increase_actions | decrease_actions
+
     written = 0
     for rec in recommendations:
-        action = rec.get("proposed_action", "")
-        if action not in {"INCREASE_10", "INCREASE_15", "INCREASE_20", "INCREASE_25",
-                          "DECREASE_10", "DECREASE_15", "DECREASE_20", "DECREASE_25"}:
+        action = getattr(rec, "proposed_action", "")
+        if action not in all_actions:
             continue
 
+        campaign_id = getattr(rec, "campaign_id", "") or ""
+        adset_id = getattr(rec, "adset_id", "") or ""
+        current_budget = getattr(rec, "current_budget", "0") or "0"
+        new_budget = getattr(rec, "proposed_new_budget", "0") or "0"
+        adj_pct = getattr(rec, "adjustment_percentage", "0") or "0"
+
         fields = {
-            "建议ID": f"SHD-{run_id[-8:]}-{rec.get('campaign_id', '')[-6:]}",
-            "实体名称": rec.get("campaign_name", ""),
-            "Meta对象ID": rec.get("campaign_id", "") or rec.get("adset_id", ""),
-            "当前预算": float(rec.get("current_budget", 0) or 0),
-            "建议预算": float(rec.get("proposed_new_budget", 0) or 0),
+            "建议ID": f"SHD-{run_id[-8:]}-{campaign_id[-6:]}",
+            "实体名称": getattr(rec, "campaign_name", ""),
+            "Meta对象ID": campaign_id or adset_id,
+            "当前预算": float(current_budget),
+            "建议预算": float(new_budget),
             "审批状态": "待审批",
-            "广告账户ID": rec.get("account_id", ""),
+            "广告账户ID": getattr(rec, "account_id", ""),
             "决策": action,
-            "调整幅度%": float(rec.get("adjustment_percentage", 0) or 0),
-            "决策理由": rec.get("reason", ""),
+            "调整幅度%": float(adj_pct),
+            "决策理由": getattr(rec, "reason", ""),
         }
 
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records"
@@ -51,6 +60,6 @@ def write_recommendations_to_bitable(recommendations, run_id):
         if r.status_code == 200 and r.json().get("code") == 0:
             written += 1
         else:
-            print(f"Write failed for {rec.get('campaign_name')}: {r.text[:200]}")
+            print(f"Write failed for {getattr(rec, 'campaign_name', 'unknown')}: {r.text[:300]}")
 
     return written
