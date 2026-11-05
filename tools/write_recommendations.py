@@ -212,15 +212,25 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         else:
             no_change_count += 1
 
-        # 统计预算（所有实体都算，CBO在Campaign层级，ABO在Ad Set层级，不会重叠）
+        # 统计预算（CBO只算Campaign层级，ABO只算Ad Set层级，避免重复计算）
         try:
             cb = float(getattr(rec, "current_budget", "0") or 0)
             nb = float(getattr(rec, "proposed_new_budget", "0") or 0)
-            # 如果新预算是0，就用旧预算代替（NO_CHANGE或者没设置的情况）
-            if cb > 0 and nb == 0:
-                nb = cb
-            total_current_budget += cb
-            total_new_budget += nb
+            budget_model = getattr(rec, "budget_model", "")
+            entity_level = getattr(rec, "entity_level", "")
+            
+            # CBO：只算Campaign层级的预算，Ad Set层级的不算（避免重复）
+            if budget_model == "CBO" and entity_level == "Ad Set":
+                pass  # 跳过Ad Set层级，因为CBO的预算在Campaign
+            # ABO：只算Ad Set层级的预算，Campaign层级的不算（ABO的预算在Ad Set）
+            elif budget_model == "ABO" and entity_level == "Campaign":
+                pass  # 跳过Campaign层级，因为ABO的预算在Ad Set
+            else:
+                # 其他情况（CBO的Campaign、ABO的Ad Set）正常统计
+                if cb > 0 and nb == 0:
+                    nb = cb
+                total_current_budget += cb
+                total_new_budget += nb
         except:
             pass
 
