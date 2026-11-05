@@ -169,7 +169,7 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
     """扫描完成后，给用户发总结消息（包含overall表现和建议分布）"""
     app_id = os.environ["FEISHU_APP_ID"]
     app_secret = os.environ["FEISHU_APP_SECRET"]
-    user_open_id = "ou_828893ebc1c062bed4b6b1602ac16e66"  # 李若冰
+    user_id = "b83b3823"  # 李若冰的user_id（租户级，跨应用通用）
     base_token = os.environ["FEISHU_BASE_TOKEN"]
 
     # 统计overall数据
@@ -268,9 +268,9 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
     }
 
     # 发消息
-    url = f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=user_id"
     payload = {
-        "receive_id": user_open_id,
+        "receive_id": user_id,
         "msg_type": "interactive",
         "content": json.dumps(card),
     }
