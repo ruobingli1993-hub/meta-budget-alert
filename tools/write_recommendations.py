@@ -66,6 +66,16 @@ def write_recommendations_to_bitable(recommendations, run_id):
         cooldown = getattr(rec, "cooldown_status", "CLEAR") or "CLEAR"
         rtg = getattr(rec, "rtg", "No") or "No"
 
+        # Ad Set层级：实体名称用adset_name，对象ID用adset_id
+        adset_name = getattr(rec, "adset_name", None)
+        campaign_name = getattr(rec, "campaign_name", "") or ""
+        if entity_level == "Ad Set" and adset_name:
+            entity_name = adset_name
+            meta_object_id = adset_id or campaign_id
+        else:
+            entity_name = campaign_name
+            meta_object_id = campaign_id or adset_id
+
         # 受众：RTG=老客/再营销，否则新客
         audience = "老客/再营销" if rtg == "Yes" else "新客"
         # 目标ROAS：RTG 2.5，新客 2.0
@@ -110,9 +120,9 @@ def write_recommendations_to_bitable(recommendations, run_id):
         reason = "；".join(reason_parts)
 
         fields = {
-            "建议ID": f"SHD-{run_id[-8:]}-{campaign_id[-6:]}",
-            "实体名称": getattr(rec, "campaign_name", ""),
-            "Meta对象ID": campaign_id or adset_id,
+            "建议ID": f"SHD-{run_id[-8:]}-{meta_object_id[-6:]}",
+            "实体名称": entity_name,
+            "Meta对象ID": meta_object_id,
             "当前预算": float(current_budget),
             "建议预算": float(new_budget),
             "审批状态": "待审批",
