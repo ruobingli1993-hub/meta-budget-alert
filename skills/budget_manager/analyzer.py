@@ -102,28 +102,39 @@ def preview() -> dict[str, Any]:
 
     # 自动模式判断：如果mode是"auto"，根据整体ROI自动判断
     if config.get("mode", "normal") == "auto":
-        total_spend = Decimal("0")
-        total_purchase_value = Decimal("0")
+        total_3d_spend = Decimal("0")
+        total_3d_purchase_value = Decimal("0")
+        total_today_spend = Decimal("0")
+        total_today_purchase_value = Decimal("0")
         for rec in recommendations:
             try:
-                if rec.entity_level == "Campaign" and rec.today_spend != "N/A":
-                    total_spend += Decimal(str(rec.today_spend))
-                    total_purchase_value += Decimal(str(rec.today_purchase_value))
+                if rec.entity_level == "Campaign":
+                    if rec.last_3d_spend != "N/A":
+                        total_3d_spend += Decimal(str(rec.last_3d_spend))
+                        total_3d_purchase_value += Decimal(str(rec.last_3d_purchase_value))
+                    if rec.today_spend != "N/A":
+                        total_today_spend += Decimal(str(rec.today_spend))
+                        total_today_purchase_value += Decimal(str(rec.today_purchase_value))
             except:
                 pass
-        overall_roas = total_purchase_value / total_spend if total_spend > 0 else Decimal("0")
+        
+        roas_3d = total_3d_purchase_value / total_3d_spend if total_3d_spend > 0 else Decimal("0")
+        roas_today = total_today_purchase_value / total_today_spend if total_today_spend > 0 else Decimal("0")
         target_roas = Decimal(str(config["target_purchase_roas"]))
         threshold = Decimal(str(config.get("auto_mode_threshold", 0.25)))
         
-        if overall_roas > target_roas * (1 + threshold):
+        # 综合判断：3天为主，今天为辅
+        # 3天ROI超过目标25%，且今天ROI也不错（不低于目标的80%）→ 放量模式
+        if roas_3d > target_roas * (1 + threshold) and roas_today >= target_roas * 0.8:
             auto_mode = "aggressive"
-            mode_reason = f"整体ROI {overall_roas:.2f} > 目标{target_roas}*1.25，自动切换为放量模式"
-        elif overall_roas < target_roas * (1 - threshold):
+            mode_reason = f"3天ROI {roas_3d:.2f} > 目标{target_roas}*1.25，今天{roas_today:.2f}也不错，自动切换为放量模式"
+        # 3天ROI低于目标25%，且今天ROI也差（不高于目标的120%）→ 保守模式
+        elif roas_3d < target_roas * (1 - threshold) and roas_today <= target_roas * 1.2:
             auto_mode = "conservative"
-            mode_reason = f"整体ROI {overall_roas:.2f} < 目标{target_roas}*0.75，自动切换为保守模式"
+            mode_reason = f"3天ROI {roas_3d:.2f} < 目标{target_roas}*0.75，今天{roas_today:.2f}也偏差，自动切换为保守模式"
         else:
             auto_mode = "normal"
-            mode_reason = f"整体ROI {overall_roas:.2f} 在目标范围内，保持正常模式"
+            mode_reason = f"3天ROI {roas_3d:.2f}、今天{roas_today:.2f}在目标范围内，保持正常模式"
         
         print(f"Auto mode: {auto_mode} - {mode_reason}")
         config["mode"] = auto_mode  # 写回config，供后续规则使用
