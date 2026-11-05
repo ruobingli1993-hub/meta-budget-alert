@@ -121,6 +121,19 @@ def preview() -> dict[str, Any]:
         errors.append(f"Feishu webhook failed (ignored): {type(exc).__name__}")
         audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_WARNING", "error": type(exc).__name__})
         print(f"Warning: Feishu webhook send failed (ignored): {type(exc).__name__}")
+
+    # 写入飞书多维表格（审批表）
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.write_recommendations import write_recommendations_to_bitable
+        written = write_recommendations_to_bitable(recommendations, run_id)
+        print(f"Written {written} recommendations to Feishu bitable...")
+    except Exception as exc:
+        errors.append(f"Feishu bitable write failed (ignored): {type(exc).__name__}")
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "BITABLE_WARNING", "error": type(exc).__name__})
+        print(f"Warning: Feishu bitable write failed (ignored): {type(exc).__name__}")
+
     finally:
         end_time = datetime.now().isoformat(timespec="seconds")
         report_path = audit.save_run_report(config, run_id, "preview", start_time, end_time, status, snapshot["recommendations"], errors)
