@@ -82,10 +82,15 @@ class BudgetRecommendation:
 
 def load_rules_from_bitable(config: dict[str, Any]) -> dict[str, Any]:
     """从多维表读取预算规则，覆盖config里的对应值"""
+    import os
     import requests
-    base_token = "TivqbYjK9a2DRbsfVs7cdlo9nJg"
-    app_id = "cli_aa63716f7cb85bf6"
-    app_secret = "U8GuxHNk4Cul12kB0038WgJo6L8t5Oon"
+    base_token = os.getenv("FEISHU_BASE_TOKEN", "TivqbYjK9a2DRbsfVs7cdlo9nJg")
+    app_id = os.getenv("FEISHU_APP_ID", "")
+    app_secret = os.getenv("FEISHU_APP_SECRET", "")
+    
+    if not app_id or not app_secret:
+        print("Warning: 飞书app凭证未配置，使用config默认值")
+        return config
     
     try:
         # 获取token
