@@ -151,6 +151,25 @@ def preview() -> dict[str, Any]:
         print(f"Auto mode: {auto_mode} - {mode_reason}")
         config["mode"] = auto_mode  # 写回config，供后续规则使用
 
+    # 总预算上限检查：如果总预算达到cap，所有加预算的建议都改成NO_CHANGE
+    budget_cap = Decimal(str(config.get("budget_cap_usd", 3500)))
+    total_current_budget = Decimal("0")
+    for rec in recommendations:
+        try:
+            if rec.entity_level == "Campaign" and rec.current_budget != "N/A" and rec.current_budget is not None:
+                total_current_budget += Decimal(str(rec.current_budget))
+        except:
+            pass
+    
+    if total_current_budget >= budget_cap:
+        print(f"总预算已达上限: ${total_current_budget} >= ${budget_cap}，所有加预算建议改为NO_CHANGE")
+        for rec in recommendations:
+            if rec.proposed_action in {"INCREASE_10", "INCREASE_15", "INCREASE_20", "INCREASE_25"}:
+                rec.proposed_action = "NO_CHANGE"
+                rec.proposed_new_budget = rec.current_budget  # 建议预算=当前预算
+                rec.adjustment_percentage = "0"
+                rec.reason = f"总预算已达上限${budget_cap}，不再加预算。原理由: {rec.reason}"
+
     snapshot = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),
