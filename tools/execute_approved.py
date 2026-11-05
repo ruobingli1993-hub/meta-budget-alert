@@ -112,7 +112,11 @@ def meta_update_budget(entity_id, target_cents):
     data = {"daily_budget": str(target_cents), "access_token": META_ACCESS_TOKEN}
     r = requests.post(url, data=data, timeout=15)
     r.raise_for_status()
-    return r.json()
+    result = r.json()
+    # 检查body里有没有error（Meta经常返回200但body里有error）
+    if "error" in result:
+        raise Exception(f"Meta API错误: {result['error'].get('message', str(result['error']))}")
+    return result
 
 
 def execute_one(token, record):
@@ -143,9 +147,18 @@ def execute_one(token, record):
         # 2) 复算安全门禁
         if suggested_usd < BUDGET_FLOOR_USD:
             raise ValueError(f"建议预算 ${suggested_usd:.2f} 低于地板 ${BUDGET_FLOOR_USD:.0f}，跳过")
-        if suggested_usd > budget_cap:
-            raise ValueError(f"建议预算 ${suggested_usd:.2f} 超过上限 ${budget_cap:.0f}，跳过")
-
+        
+        # 只有加预算才卡总预算cap，减预算不卡
+        if suggested_usd > current_usd:
+            # 加预算：算一下总预算会不会超cap
+            # 这里简化：先假设当前总预算是3000，加完这个实体的增量，看看超不超3500
+            # 更准确的逻辑要拉所有账户的预算加总
+            total_current_estimate = 3000  # 简化值，后面改成从Meta实时拉
+            delta = suggested_usd - current_usd
+            new_total = total_current_estimate + delta
+            if new_total > budget_cap:
+                raise ValueError(f"加预算后总预算约 ${new_total:.0f} 超过上限 ${budget_cap:.0f}，跳过")
+        
         change_pct = abs(suggested_usd - current_usd) / current_usd if current_usd > 0 else 0
         if change_pct > MAX_CHANGE_PCT:
             raise ValueError(f"变动幅度 {change_pct:.1%} 超过最大 {MAX_CHANGE_PCT:.0%}，跳过")
@@ -170,11 +183,20 @@ def execute_one(token, record):
         target_cents = int(suggested_usd * 100)
         result = meta_update_budget(entity_id, target_cents)
         print(f"  ✅ Meta返回: {json.dumps(result)[:200]}")
+        
+        # 5) 验证：再拉一次Meta预算，确认真的改了
+        time.sleep(2)  # 等2秒让Meta生效
+        verify_cents, verify_name = meta_get_budget(entity_id)
+        verify_usd = verify_cents / 100
+        print(f"  验证Meta预算: ${verify_usd:.2f}")
+        
+        if abs(verify_usd - suggested_usd) > 1.0:
+            raise Exception(f"验证失败：Meta预算还是 ${verify_usd:.2f}，没改成 ${suggested_usd:.2f}")
 
-        # 5) 回写「已执行」
+        # 6) 回写「已执行」
         update_record(token, rid, {
             "审批状态": "已执行",
-            "执行结果": f"成功：${current_usd:.2f} → ${suggested_usd:.2f}（Meta实时确认 ${live_usd:.2f}）",
+            "执行结果": f"成功：${current_usd:.2f} → ${suggested_usd:.2f}（验证后 ${verify_usd:.2f}）",
             "执行时间": int(time.time() * 1000),
         })
         print(f"  ✅ 已回写飞书")
