@@ -66,8 +66,23 @@ def get_tenant_token():
     return r.json()["tenant_access_token"]
 
 
-def list_approved_records(token):
-    """查询所有记录，本地过滤「已同意」"""
+def send_feishu_message(token, text):
+    """发飞书消息给指定用户"""
+    user_open_id = "ou_2bdd5af9ba3b849a38bb372535d6708f"
+    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    payload = {
+        "receive_id": user_open_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}),
+    }
+    r = requests.post(url, headers=headers, json=payload, timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
+def list_records_by_status(token, status):
+    """查询所有记录，本地过滤指定状态"""
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{TABLE_ID}/records?page_size=100"
     headers = {"Authorization": f"Bearer {token}"}
     r = requests.get(url, headers=headers, timeout=15)
@@ -75,13 +90,12 @@ def list_approved_records(token):
     data = r.json()
     items = data.get("data", {}).get("items", [])
 
-    # 本地过滤：审批状态=已同意
     result = []
     for it in items:
         st = it["fields"].get("审批状态", "")
         if isinstance(st, list) and st:
             st = st[0].get("text", "")
-        if st == "已同意":
+        if st == status:
             result.append(it)
     return result
 
@@ -215,16 +229,58 @@ def main():
     print(f"=== 调价执行器启动 {datetime.now().isoformat()} ===")
     token = get_tenant_token()
     print(f"飞书token获取成功")
+    
+    success_count = 0
+    fail_count = 0
+    success_list = []
+    fail_list = []
 
-    records = list_approved_records(token)
-    print(f"找到 {len(records)} 条「已同意」记录")
-
-    for rec in records:
+    # 1. 执行新同意的
+    approved = list_records_by_status(token, "已同意")
+    print(f"找到 {len(approved)} 条「已同意」记录")
+    for rec in approved:
         try:
             execute_one(token, rec)
+            success_count += 1
+            f = rec["fields"]
+            success_list.append(f"{f.get('实体名称', '?')}: ${f.get('当前预算', 0)} → ${f.get('建议预算', 0)}")
         except Exception as e:
             print(f"  ❌ 单条执行异常: {e}")
-            continue
+            fail_count += 1
+            f = rec["fields"]
+            fail_list.append(f"{f.get('实体名称', '?')}: {str(e)[:50]}")
+
+    # 2. 重试之前失败的（最多3次）
+    failed = list_records_by_status(token, "执行失败")
+    print(f"找到 {len(failed)} 条「执行失败」记录，开始重试")
+    for rec in failed:
+        try:
+            execute_one(token, rec)
+            success_count += 1
+            f = rec["fields"]
+            success_list.append(f"[重试成功] {f.get('实体名称', '?')}")
+        except Exception as e:
+            print(f"  ❌ 重试失败: {e}")
+            fail_count += 1
+            f = rec["fields"]
+            fail_list.append(f"[重试失败] {f.get('实体名称', '?')}: {str(e)[:50]}")
+
+    # 3. 发消息
+    if success_count > 0 or fail_count > 0:
+        msg = f"=== 调价执行完成 ===\n"
+        msg += f"成功: {success_count} 条\n"
+        if success_list:
+            for s in success_list[:5]:
+                msg += f"  ✅ {s}\n"
+        if fail_count > 0:
+            msg += f"\n失败: {fail_count} 条\n"
+            for f in fail_list[:5]:
+                msg += f"  ❌ {f}\n"
+        try:
+            send_feishu_message(token, msg)
+            print(f"  已发飞书消息")
+        except Exception as e:
+            print(f"  发消息失败: {e}")
 
     print(f"\n=== 执行完成 ===")
 
