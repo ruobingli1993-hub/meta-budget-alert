@@ -41,6 +41,7 @@
     "today_purchase_min": 1
   },
   "budget_floor_usd": 80,
+  "max_rtg_budget_ratio": 0.3,
   "cooldown": {
     "max_adjustments_per_day": 1,
     "max_same_direction_days": 3,

@@ -170,14 +170,34 @@ def analyze_account(provider: MetaDataProvider, account: Any, config: dict[str, 
 
     recs: list[BudgetRecommendation] = []
     print("Evaluating rules...")
+
+    # 计算账户总预算和RTG预算占比
+    total_budget = Decimal("0")
+    rtg_budget = Decimal("0")
+    for c in campaigns:
+        if c.daily_budget:
+            total_budget += c.daily_budget
+            if rules.is_rtg(c.entity_name, config):
+                rtg_budget += c.daily_budget
+    for a in adsets:
+        if a.daily_budget:
+            total_budget += a.daily_budget
+            # adset层级的RTG判断基于所属campaign
+            parent_campaign = next((c for c in campaigns if c.entity_id == a.campaign_id), None)
+            if parent_campaign and rules.is_rtg(parent_campaign.entity_name, config):
+                rtg_budget += a.daily_budget
+
+    rtg_budget_ratio = float(rtg_budget / total_budget) if total_budget > 0 else 0
+    print(f"Account budget: total=${total_budget}, RTG=${rtg_budget} ({rtg_budget_ratio:.1%})")
+
     for campaign in campaigns:
         has_campaign_budget = campaign.daily_budget is not None or campaign.lifetime_budget is not None
         if has_campaign_budget:
-            recs.append(analyze_entity(provider, account, campaign, None, "Campaign", "CBO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config))
+            recs.append(analyze_entity(provider, account, campaign, None, "Campaign", "CBO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config, rtg_budget_ratio))
             continue
         campaign_adsets = [row for row in adsets if row.campaign_id == campaign.entity_id and row.daily_budget is not None]
         for adset in campaign_adsets:
-            recs.append(analyze_entity(provider, account, campaign, adset, "Ad Set", "ABO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config))
+            recs.append(analyze_entity(provider, account, campaign, adset, "Ad Set", "ABO", account_regime, regime_reason, account_3d_window, account_today, regime_inputs, config, rtg_budget_ratio))
     if not recs:
         recs.append(data_error_recommendation(account, f"Cannot identify actual budget level. Account regime: {account_regime}. {regime_reason}"))
     return recs
@@ -196,6 +216,7 @@ def analyze_entity(
     account_today: InsightRecord,
     regime_inputs: dict[str, Any],
     config: dict[str, Any],
+    rtg_budget_ratio: float = 0,
 ) -> BudgetRecommendation:
     entity = adset or campaign
     provider_level = "adset" if adset else "campaign"
@@ -214,7 +235,7 @@ def analyze_entity(
     elif last_3d_record.data_status != "SUCCESS" or today_record.data_status != "SUCCESS":
         decision = rules.decision("DATA_INSUFFICIENT", entity.daily_budget, config, "Meta Data Provider returned EMPTY data; budget changes are blocked.", False, "")
     else:
-        decision = rules.evaluate_entity(entity_level, budget_model, rtg, account_regime, last_3d, today, avg_30d, entity.daily_budget, entity.learning_status, config)
+        decision = rules.evaluate_entity(entity_level, budget_model, rtg, account_regime, last_3d, today, avg_30d, entity.daily_budget, entity.learning_status, config, rtg_budget_ratio)
     return BudgetRecommendation(
         account_name=account.name,
         account_id=account.account_id,

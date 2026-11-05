@@ -163,6 +163,7 @@ def evaluate_entity(
     current_budget: Decimal | None,
     learning_status: str,
     config: dict[str, Any],
+    rtg_budget_ratio: float = 0,
 ) -> dict[str, Any]:
     funnel_anomaly, funnel_reason = detect_funnel_anomaly(today, avg_30d, config)
     if not has_last_3d_sample(last_3d, config) or not has_today_sample(today, config):
@@ -203,6 +204,12 @@ def evaluate_entity(
             reason = f"Learning status caps the adjustment at 10%; original action was {original}."
         elif action != "NO_CHANGE":
             reason = "Learning status allows only a small adjustment."
+
+    # 老客（RTG）预算占比上限检查
+    max_rtg_ratio = config.get("max_rtg_budget_ratio", 0.3)
+    if rtg and action in INCREASE_ACTIONS and rtg_budget_ratio > max_rtg_ratio:
+        action = "NO_CHANGE"
+        reason = f"老客预算占比已达{rtg_budget_ratio:.1%}，超过{max_rtg_ratio:.0%}上限，不再加预算。"
 
     return decision(action, current_budget, config, reason, funnel_anomaly, funnel_reason)
 
