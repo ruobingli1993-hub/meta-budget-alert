@@ -100,6 +100,34 @@ def preview() -> dict[str, Any]:
         for rec in recs:
             audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "SCAN_RESULT", **asdict(rec)})
 
+    # 自动模式判断：如果mode是"auto"，根据整体ROI自动判断
+    if config.get("mode", "normal") == "auto":
+        total_spend = Decimal("0")
+        total_purchase_value = Decimal("0")
+        for rec in recommendations:
+            try:
+                if rec.entity_level == "Campaign" and rec.today_spend != "N/A":
+                    total_spend += Decimal(str(rec.today_spend))
+                    total_purchase_value += Decimal(str(rec.today_purchase_value))
+            except:
+                pass
+        overall_roas = total_purchase_value / total_spend if total_spend > 0 else Decimal("0")
+        target_roas = Decimal(str(config["target_purchase_roas"]))
+        threshold = Decimal(str(config.get("auto_mode_threshold", 0.25)))
+        
+        if overall_roas > target_roas * (1 + threshold):
+            auto_mode = "aggressive"
+            mode_reason = f"整体ROI {overall_roas:.2f} > 目标{target_roas}*1.25，自动切换为放量模式"
+        elif overall_roas < target_roas * (1 - threshold):
+            auto_mode = "conservative"
+            mode_reason = f"整体ROI {overall_roas:.2f} < 目标{target_roas}*0.75，自动切换为保守模式"
+        else:
+            auto_mode = "normal"
+            mode_reason = f"整体ROI {overall_roas:.2f} 在目标范围内，保持正常模式"
+        
+        print(f"Auto mode: {auto_mode} - {mode_reason}")
+        config["mode"] = auto_mode  # 写回config，供后续规则使用
+
     snapshot = {
         "run_id": run_id,
         "created_at": datetime.now().isoformat(timespec="seconds"),

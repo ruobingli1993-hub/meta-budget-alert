@@ -1,7 +1,8 @@
 {
   "rule_version": "budget_manager_v2",
-  "mode": "normal",
+  "mode": "auto",
   "target_purchase_roas": 3.0,
+  "auto_mode_threshold": 0.25,
   "minimum_daily_budget_usd": 80,
   "budget_floor_usd": 80,
   "budget_cap_usd": 3500,
