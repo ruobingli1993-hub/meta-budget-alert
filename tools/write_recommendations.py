@@ -4,6 +4,7 @@
 """
 import os
 import time
+import json
 import requests
 from datetime import datetime
 
@@ -149,4 +150,75 @@ def write_recommendations_to_bitable(recommendations, run_id):
         else:
             print(f"Write failed for {getattr(rec, 'campaign_name', 'unknown')}: {r.text[:300]}")
 
+    # 写完后发消息提醒
+    if written > 0:
+        try:
+            send_approval_notification(written, run_id)
+        except Exception as e:
+            print(f"Notification failed (ignored): {e}")
+
     return written
+
+
+def send_approval_notification(written_count: int, run_id: str):
+    """写完建议后，给用户发消息提醒去审批"""
+    app_id = os.environ["FEISHU_APP_ID"]
+    app_secret = os.environ["FEISHU_APP_SECRET"]
+    user_open_id = "ou_828893ebc1c062bed4b6b1602ac16e66"  # 李若冰
+    base_token = os.environ["FEISHU_BASE_TOKEN"]
+
+    # 拿tenant token
+    r = requests.post(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        json={"app_id": app_id, "app_secret": app_secret},
+        timeout=10,
+    )
+    token = r.json()["tenant_access_token"]
+
+    # 消息卡片
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "🔔 新的调价建议待审批"},
+            "template": "orange",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"本次扫描生成 **{written_count}** 条调价建议，请及时审批。\n扫描时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                },
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "去审批"},
+                        "type": "primary",
+                        "url": f"https://feishu.cn/base/{base_token}",
+                    }
+                ],
+            },
+        ],
+    }
+
+    # 发消息
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id"
+    payload = {
+        "receive_id": user_open_id,
+        "msg_type": "interactive",
+        "content": json.dumps(card),
+    }
+    r = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=15,
+    )
+    result = r.json()
+    if result.get("code") == 0:
+        print(f"Approval notification sent to user: {written_count} recommendations")
+    else:
+        print(f"Failed to send notification: {result}")
