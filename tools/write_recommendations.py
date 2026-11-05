@@ -47,6 +47,14 @@ def write_recommendations_to_bitable(recommendations, run_id):
         if action not in all_actions:
             continue
 
+        # 从action（如"INCREASE_15"）拆出决策类型
+        if action.startswith("INCREASE"):
+            decision_type = "INCREASE"
+        elif action.startswith("DECREASE"):
+            decision_type = "DECREASE"
+        else:
+            decision_type = action
+
         campaign_id = getattr(rec, "campaign_id", "") or ""
         adset_id = getattr(rec, "adset_id", "") or ""
         current_budget = getattr(rec, "current_budget", "0") or "0"
@@ -109,7 +117,7 @@ def write_recommendations_to_bitable(recommendations, run_id):
             "建议预算": float(new_budget),
             "审批状态": "待审批",
             "广告账户ID": account_id,
-            "决策": action,
+            "决策": decision_type,
             "调整幅度%": float(adj_pct),
             "决策理由": reason,
             "账户": ACCOUNT_MAP.get(account_id, account_id),
