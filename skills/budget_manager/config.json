@@ -57,11 +57,18 @@
     "learning_required_repeated_days": 3
   },
   "actions_by_regime": {
+    "abo_increase": {
+      "BULL": "INCREASE_25",
+      "HEALTHY": "INCREASE_15",
+      "NEUTRAL": "INCREASE_10",
+      "BEAR": "NO_CHANGE",
+      "SEVERE_BEAR": "NO_CHANGE"
+    },
     "abo_decrease": {
       "BULL": "NO_CHANGE",
-      "HEALTHY": "DECREASE_10",
-      "NEUTRAL": "DECREASE_15",
-      "BEAR": "DECREASE_20",
+      "HEALTHY": "NO_CHANGE",
+      "NEUTRAL": "DECREASE_10",
+      "BEAR": "DECREASE_15",
       "SEVERE_BEAR": "DECREASE_20"
     },
     "non_rtg_cbo_increase": {
