@@ -40,7 +40,7 @@ def append_log(config: dict[str, Any], event: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     clean_event = redact(event)
     with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(clean_event, ensure_ascii=False) + "\n")
+        file.write(json.dumps(clean_event, ensure_ascii=False, default=str) + "\n")
 
 
 def redact(value: Any) -> Any:
