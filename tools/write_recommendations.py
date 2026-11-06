@@ -47,10 +47,8 @@ def write_recommendations_to_bitable(recommendations, run_id):
         action = getattr(rec, "proposed_action", "")
 
         # 决定审批状态
-        if action in increase_actions or action in decrease_actions:
+        if action in increase_actions or action in decrease_actions or action == "NO_CHANGE":
             approval_status = "待审批"
-        elif action == "NO_CHANGE":
-            approval_status = "不调整"
         else:
             approval_status = "数据异常"
 
