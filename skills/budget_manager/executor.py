@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -172,7 +172,34 @@ def write_budget(api: MetaMarketingAPI, entity_id: str, currency: str, budget: D
 def append_change_log(run_id: str, result: dict[str, Any], config: dict[str, Any]) -> None:
     path = Path(config["change_log_path"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"run_id": run_id, "created_at": datetime.now().isoformat(timespec="seconds"), **result}
+    
+    row = result.get("row", {})
+    entity_id = row.get("adset_id") or row.get("campaign_id") or ""
+    entity_name = row.get("adset_name") or row.get("campaign_name") or ""
+    action = row.get("proposed_action", "")
+    old_budget = result.get("before")
+    new_budget = result.get("after")
+    
+    # 计算调整幅度
+    adjustment_pct = 0
+    if old_budget and new_budget and old_budget > 0:
+        adjustment_pct = (new_budget - old_budget) / old_budget
+    
+    direction = "increase" if adjustment_pct > 0 else "decrease" if adjustment_pct < 0 else "none"
+    
+    payload = {
+        "run_id": run_id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "date": date.today().isoformat(),
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "action": action,
+        "direction": direction,
+        "adjustment_pct": str(adjustment_pct),
+        "old_budget": str(old_budget) if old_budget else None,
+        "new_budget": str(new_budget) if new_budget else None,
+        "status": result.get("status"),
+    }
     with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(payload, ensure_ascii=False) + "\n")
 

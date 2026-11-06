@@ -379,7 +379,21 @@ def analyze_entity(
     elif last_3d_record.data_status != "SUCCESS" or today_record.data_status != "SUCCESS":
         decision = rules.decision("DATA_INSUFFICIENT", entity.daily_budget, config, "Meta Data Provider returned EMPTY data; budget changes are blocked.", False, "")
     else:
-        decision = rules.evaluate_entity(entity_level, budget_model, rtg, account_regime, last_3d, today, avg_30d, entity.daily_budget, entity.learning_status, config, rtg_budget_ratio)
+        decision = rules.evaluate_entity(
+            entity_id=entity.entity_id,
+            entity_name=adset.entity_name if adset else campaign.entity_name,
+            entity_level=entity_level,
+            budget_model=budget_model,
+            rtg=rtg,
+            account_mode=account_regime,
+            last_3d=last_3d,
+            today=today,
+            avg_7d=last_7d,
+            current_budget=entity.daily_budget,
+            learning_status=entity.learning_status,
+            config=config,
+            rtg_budget_ratio=rtg_budget_ratio,
+        )
     return BudgetRecommendation(
         account_name=account.name,
         account_id=account.account_id,
@@ -465,7 +479,7 @@ def account_regime_from_records(
         return "DATA_INSUFFICIENT", "Account 3D spend, purchase value, or ROAS is unavailable; account regime cannot be classified."
     if account_today.data_status == "ERROR":
         return "DATA_INSUFFICIENT", "Account today data_status is ERROR; account regime cannot use today."
-    return rules.determine_account_regime(account_3d_window, account_today_window, funnel_anomaly, config)
+    return rules.determine_account_mode(account_3d_window.roas, config)
 
 
 def data_error_recommendation(account: Any, error: str) -> BudgetRecommendation:

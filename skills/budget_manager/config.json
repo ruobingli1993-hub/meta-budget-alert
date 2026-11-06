@@ -1,13 +1,14 @@
 {
-  "rule_version": "budget_manager_v2",
+  "rule_version": "budget_manager_v3",
   "mode": "auto",
-  "target_purchase_roas": 3.0,
   "target_roas_rtg": 2.5,
   "target_roas_non_rtg": 2.0,
-  "auto_mode_threshold": 0.25,
-  "minimum_daily_budget_usd": 80,
+  "rtg_budget_ratio_weight": 0.3,
+  "weighted_target_roas": 2.15,
+  "auto_mode_threshold": 0.2,
   "budget_floor_usd": 80,
   "budget_cap_usd": 3500,
+  "budget_cap_warning_pct": 0.8,
   "max_rtg_budget_ratio": 0.3,
   "preview_log_dir": "logs/budget_previews",
   "run_report_dir": "logs/budget_runs",
@@ -15,7 +16,8 @@
   "change_log_path": "logs/budget_changes.jsonl",
   "latest_budget_backup_path": "logs/latest_budget_backup.json",
   "performance_account_type": "performance",
-  "rtg_keywords": ["RTG", "Retargeting", "Remarketing"],
+  "rtg_keywords": ["RTG", "Retargeting", "Remarketing", "Brand"],
+  "brand_keywords": ["Brand", "brand"],
   "allowed_actions": [
     "INCREASE_25",
     "INCREASE_20",
@@ -31,66 +33,68 @@
     "MANUAL_REVIEW",
     "COOLDOWN"
   ],
-  "account_regime": {
-    "bull_3d_roas_min": 4.0,
-    "bull_today_roas_min": 3.0,
-    "bull_3d_purchase_min": 3,
-    "healthy_3d_roas_min": 3.0,
-    "neutral_3d_roas_min": 2.5,
-    "bear_3d_roas_max": 2.5,
-    "severe_bear_3d_roas_max": 2.0,
-    "severe_bear_today_roas_max": 2.0
+  "regime_thresholds": {
+    "bull_above_target_pct": 1.2,
+    "healthy_above_target_pct": 1.0,
+    "neutral_above_target_pct": 0.8,
+    "bear_above_target_pct": 0.6,
+    "severe_bear_below_target_pct": 0.6
+  },
+  "auto_mode_thresholds": {
+    "aggressive_above_weighted_pct": 1.2,
+    "conservative_below_weighted_pct": 0.8
+  },
+  "scene_actions": {
+    "scene_1_today_pass_3d_pass": {
+      "BULL": {
+        "aggressive": "INCREASE_25",
+        "normal": "INCREASE_20",
+        "conservative": "INCREASE_15"
+      },
+      "HEALTHY": {
+        "aggressive": "INCREASE_20",
+        "normal": "INCREASE_15",
+        "conservative": "INCREASE_10"
+      },
+      "NEUTRAL": "NO_CHANGE",
+      "BEAR": "NO_CHANGE",
+      "SEVERE_BEAR": "NO_CHANGE"
+    },
+    "scene_2_today_pass_3d_neutral": {
+      "default": "INCREASE_10"
+    },
+    "scene_3_today_pass_3d_below": {
+      "default": "NO_CHANGE"
+    },
+    "scene_4_today_neutral_3d_pass": {
+      "aggressive": "INCREASE_10",
+      "normal": "NO_CHANGE",
+      "conservative": "NO_CHANGE"
+    },
+    "scene_5_today_below_3d_pass": {
+      "aggressive": "NO_CHANGE",
+      "normal": "NO_CHANGE",
+      "conservative": "DECREASE_10"
+    },
+    "scene_6_today_neutral_3d_neutral": {
+      "default": "NO_CHANGE"
+    },
+    "scene_7_today_below_3d_neutral": {
+      "default": "DECREASE_10"
+    },
+    "scene_8_today_below_3d_below": {
+      "BEAR": "DECREASE_15",
+      "SEVERE_BEAR": "DECREASE_25"
+    }
   },
   "sample_protection": {
-    "last_3d_spend_min": 240,
-    "last_3d_purchase_min": 2,
-    "today_spend_min": 80,
-    "today_purchase_min": 1
+    "last_3d_spend_min": 240
   },
-  "budget_floor_usd": 80,
-  "max_rtg_budget_ratio": 0.3,
   "cooldown": {
-    "max_adjustments_per_day": 1,
+    "max_adjustments_per_day": 2,
+    "max_daily_change_pct": 0.3,
     "max_same_direction_days": 3,
-    "cooldown_days_after_streak": 3,
-    "learning_max_adjustment_pct": 10,
-    "learning_required_repeated_days": 3
-  },
-  "actions_by_regime": {
-    "abo_increase": {
-      "BULL": "INCREASE_25",
-      "HEALTHY": "INCREASE_15",
-      "NEUTRAL": "INCREASE_10",
-      "BEAR": "NO_CHANGE",
-      "SEVERE_BEAR": "NO_CHANGE"
-    },
-    "abo_decrease": {
-      "BULL": "NO_CHANGE",
-      "HEALTHY": "NO_CHANGE",
-      "NEUTRAL": "DECREASE_10",
-      "BEAR": "DECREASE_15",
-      "SEVERE_BEAR": "DECREASE_20"
-    },
-    "non_rtg_cbo_increase": {
-      "BULL": "INCREASE_25",
-      "HEALTHY": "INCREASE_20",
-      "NEUTRAL": "INCREASE_10",
-      "BEAR": "NO_CHANGE",
-      "SEVERE_BEAR": "NO_CHANGE"
-    },
-    "non_rtg_cbo_decrease": {
-      "BULL": "DECREASE_10",
-      "HEALTHY": "DECREASE_15",
-      "NEUTRAL": "DECREASE_20",
-      "BEAR": "DECREASE_20",
-      "SEVERE_BEAR": "DECREASE_25"
-    },
-    "rtg_cbo_increase": {
-      "BULL": "INCREASE_20",
-      "HEALTHY": "INCREASE_15",
-      "NEUTRAL": "INCREASE_10",
-      "BEAR": "NO_CHANGE",
-      "SEVERE_BEAR": "NO_CHANGE"
-    }
+    "cooldown_days_after_streak": 2,
+    "learning_max_adjustment_pct": 10
   }
 }
