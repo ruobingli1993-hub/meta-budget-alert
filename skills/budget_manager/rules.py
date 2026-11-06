@@ -493,6 +493,17 @@ def evaluate_entity(
     # 生成详细理由
     reason = build_decision_reason(today, last_3d, avg_7d, target_roas, scene, entity_regime, account_mode, base_action, action, reason_parts)
     
+    # 最后加上预算信息
+    final_pct = pct_from_action(action)
+    proposed_budget = None
+    if current_budget and action not in NO_WRITE_ACTIONS:
+        proposed_budget = current_budget * (1 + final_pct)
+    
+    budget_cap = config.get("total_budget_cap", 3500)
+    budget_info = f"【预算】当前${current_budget or 0:.0f} → 建议${proposed_budget or current_budget or 0:.0f}（{final_pct*100:+.0f}%）；总预算cap ${budget_cap}"
+    
+    reason = reason + "；" + budget_info
+    
     return decision(action, current_budget, config, reason, False, "")
 
 
