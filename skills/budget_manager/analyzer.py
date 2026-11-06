@@ -297,7 +297,8 @@ def analyze_account(provider: MetaDataProvider, account: Any, config: dict[str, 
         account_today_window = metric_window(account_today)
         account_30d_window = metric_window(account_30d)
 
-        account_funnel, _ = rules.detect_funnel_anomaly(account_today_window, account_30d_window, config)
+        # 漏斗异常检测暂时去掉，后面版本再加
+        account_funnel = False
         account_regime, regime_reason = account_regime_from_records(account_3d, account_today, account_3d_window, account_today_window, account_funnel, config)
         regime_inputs = regime_debug(account_3d, account_today, account_regime, regime_reason)
         print_regime_debug(account.account_id, regime_inputs)
@@ -308,7 +309,9 @@ def analyze_account(provider: MetaDataProvider, account: Any, config: dict[str, 
         print("Scanning Ad Sets...")
         adsets = [item for item in provider.get_adsets(account, meta=meta) if item.effective_status == "ACTIVE"]
     except Exception as exc:
-        clean_error = sanitize_error(exc)
+        import traceback
+        traceback.print_exc()
+        clean_error = str(exc)
         logger.error("Budget Manager account scan failed | account_id=%s | error=%s", account.account_id, clean_error)
         return [data_error_recommendation(account, clean_error)]
 
@@ -479,7 +482,8 @@ def account_regime_from_records(
         return "DATA_INSUFFICIENT", "Account 3D spend, purchase value, or ROAS is unavailable; account regime cannot be classified."
     if account_today.data_status == "ERROR":
         return "DATA_INSUFFICIENT", "Account today data_status is ERROR; account regime cannot use today."
-    return rules.determine_account_mode(account_3d_window.roas, config)
+    mode = rules.determine_account_mode(account_3d_window.roas, config)
+    return mode, f"总ROAS {account_3d_window.roas:.2f}，按加权目标判断为{mode}模式"
 
 
 def data_error_recommendation(account: Any, error: str) -> BudgetRecommendation:
@@ -589,7 +593,7 @@ def sanitize_error(exc: Exception) -> str:
 def save_preview(snapshot: dict[str, Any], config: dict[str, Any]) -> None:
     directory = Path(config["preview_log_dir"])
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{snapshot['run_id']}.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (directory / f"{snapshot['run_id']}.json").write_text(json.dumps(snapshot, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
 
 
 def format_preview(snapshot: dict[str, Any]) -> str:
