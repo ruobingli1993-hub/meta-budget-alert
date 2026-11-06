@@ -251,8 +251,6 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         f"放量 {increase_count} 条 | 控量 {decrease_count} 条 | 不变 {no_change_count} 条\n\n"
         f"**Overall 实时表现（今日）**\n"
         f"花费 ${total_spend:.2f} | 购买 {total_purchase} 单 | ROAS {overall_roas:.2f}\n\n"
-        f"**综上决策**\n"
-        f"整体预算调整：{budget_change_pct:+.0f}%\n\n"
         f"**预算概况**\n"
         f"当前总预算 ${total_current_budget:.0f} → 建议总预算 ${total_new_budget:.0f}（{budget_change_pct:+.1f}%）；总预算cap ${total_budget_cap}"
     )
