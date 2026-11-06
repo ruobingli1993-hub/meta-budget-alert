@@ -145,8 +145,8 @@ def has_last_3d_sample(metrics: MetricWindow, config: dict[str, Any]) -> bool:
 
 
 def has_today_sample(metrics: MetricWindow, config: dict[str, Any]) -> bool:
-    sample = config["sample_protection"]
-    return metrics.spend >= Decimal(str(sample["today_spend_min"])) or metrics.purchase >= Decimal(str(sample["today_purchase_min"]))
+    # 数据保护只看3天花费，当天不限制
+    return True
 
 
 def determine_account_regime(last_3d: MetricWindow, today: MetricWindow, funnel_anomaly: bool, config: dict[str, Any]) -> tuple[str, str]:
@@ -413,16 +413,37 @@ def evaluate_entity(
     # Brand账户直接NO_CHANGE
     if is_brand(entity_name, config):
         reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "brand", "BRAND", account_mode, "NO_CHANGE", "NO_CHANGE", ["Brand账户不参与自动调价"])
-        return decision("NO_CHANGE", current_budget, config, reason, False, "")
+        return {
+            "proposed_action": "NO_CHANGE",
+            "proposed_new_budget": current_budget,
+            "adjustment_percentage": 0,
+            "reason": reason,
+            "funnel_anomaly": False,
+            "optimization_hint": "",
+        }
     
     # 数据不够检查
     if not has_last_3d_sample(last_3d, config):
         reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_insufficient", "DATA_INSUFFICIENT", account_mode, "NO_CHANGE", "NO_CHANGE", ["3天花费不足$240，样本不够"])
-        return decision("DATA_INSUFFICIENT", current_budget, config, reason, False, "")
+        return {
+            "proposed_action": "DATA_INSUFFICIENT",
+            "proposed_new_budget": current_budget,
+            "adjustment_percentage": 0,
+            "reason": reason,
+            "funnel_anomaly": False,
+            "optimization_hint": "",
+        }
     
     if last_3d.roas is None or today.roas is None:
         reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_error", "DATA_ERROR", account_mode, "NO_CHANGE", "NO_CHANGE", ["ROAS不可用"])
-        return decision("DATA_ERROR", current_budget, config, reason, False, "")
+        return {
+            "proposed_action": "DATA_ERROR",
+            "proposed_new_budget": current_budget,
+            "adjustment_percentage": 0,
+            "reason": reason,
+            "funnel_anomaly": False,
+            "optimization_hint": "",
+        }
     
     # 确定目标ROAS（新客2.0，老客2.5）
     target_roas = Decimal(str(config["target_roas_rtg"])) if rtg else Decimal(str(config["target_roas_non_rtg"]))
@@ -431,7 +452,14 @@ def evaluate_entity(
     entity_regime, regime_reason = determine_entity_regime(last_3d.roas, target_roas, config)
     if entity_regime in {"DATA_INSUFFICIENT", "DATA_ERROR"}:
         reason = build_decision_reason(today, last_3d, avg_7d, target_roas, "regime_error", entity_regime, account_mode, "NO_CHANGE", "NO_CHANGE", [regime_reason])
-        return decision(entity_regime, current_budget, config, reason, False, "")
+        return {
+            "proposed_action": entity_regime,
+            "proposed_new_budget": current_budget,
+            "adjustment_percentage": 0,
+            "reason": reason,
+            "funnel_anomaly": False,
+            "optimization_hint": "",
+        }
     
     # 判断场景
     scene, scene_reason = determine_scene(today.roas, last_3d.roas, target_roas)
@@ -504,7 +532,21 @@ def evaluate_entity(
     
     reason = reason + "；" + budget_info
     
-    return decision(action, current_budget, config, reason, False, "")
+    # 构建返回字典
+    proposed_new_budget = None
+    adjustment_percentage = 0
+    if current_budget and action not in NO_WRITE_ACTIONS:
+        proposed_new_budget = current_budget * (1 + final_pct)
+        adjustment_percentage = float(final_pct * 100)
+    
+    return {
+        "proposed_action": action,
+        "proposed_new_budget": proposed_new_budget,
+        "adjustment_percentage": adjustment_percentage,
+        "reason": reason,
+        "funnel_anomaly": False,
+        "optimization_hint": "",
+    }
 
 
 def build_decision_reason(
