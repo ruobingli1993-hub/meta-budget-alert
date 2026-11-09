@@ -166,7 +166,17 @@ def execute_one(token, record):
     print(f"\n=== 执行: {sug_id} ===")
     print(f"  实体: {entity_name} ({entity_id})")
 
-    # 0) 抢占锁：多条审批可能同时触发多个run，只有最终写入的uuid能通过复核，避免重复调价
+    # 0) 执行前复核：用户可能刚把状态改成已拒绝/已过期，此时不应再动
+    try:
+        pre = get_record(token, rid)
+        pre_status = json.dumps(pre.get("fields", {}).get("审批状态", ""), ensure_ascii=False)
+        if "已同意" not in pre_status:
+            print(f"  跳过：当前审批状态已变为 {pre_status}，不再执行")
+            return
+    except Exception as e:
+        print(f"  状态复核失败（继续）: {e}")
+
+    # 0.1) 抢占锁：多条审批可能同时触发多个run，只有最终写入的uuid能通过复核，避免重复调价
     lock_id = uuid.uuid4().hex
     update_record(token, rid, {
         "审批状态": "执行中",
