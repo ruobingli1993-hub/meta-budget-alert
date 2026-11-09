@@ -133,6 +133,9 @@ def determine_scene(today_roas: Decimal | None, roas_3d: Decimal | None, target_
         return "scene_6_today_neutral_3d_neutral", "当天和3天都一般"
     if today_below and roas_3d_neutral:
         return "scene_7_today_below_3d_neutral", "当天较差但3天一般"
+    if today_neutral and roas_3d_below:
+        # 8场景表未覆盖「当天一般+3天不达标」，按保守原则保持不动
+        return "scene_9_today_neutral_3d_below", "当天一般但3天不达标"
     if today_below and roas_3d_below:
         return "scene_8_today_below_3d_below", "当天和3天都较差"
     
@@ -393,6 +396,25 @@ def is_brand(name: str, config: dict[str, Any]) -> bool:
     return any(keyword.lower() in lowered for keyword in config.get("brand_keywords", []))
 
 
+def decision(
+    action: str,
+    current_budget: Decimal | None,
+    config: dict[str, Any],
+    reason: str,
+    funnel_anomaly: bool = False,
+    optimization_hint: str = "",
+) -> dict[str, Any]:
+    """数据异常/数据不足时的决策对象（analyzer.py 兼容入口，不改预算）"""
+    return {
+        "proposed_action": action,
+        "proposed_new_budget": current_budget,
+        "adjustment_percentage": 0,
+        "reason": reason,
+        "funnel_anomaly": funnel_anomaly,
+        "optimization_hint": optimization_hint,
+    }
+
+
 def evaluate_entity(
     entity_id: str,
     entity_name: str,
@@ -424,7 +446,7 @@ def evaluate_entity(
     
     # 数据不够检查
     if not has_last_3d_sample(last_3d, config):
-        reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_insufficient", "DATA_INSUFFICIENT", account_mode, "NO_CHANGE", "NO_CHANGE", ["3天花费不足$240，样本不够"])
+        reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_insufficient", "DATA_INSUFFICIENT", account_mode, "NO_CHANGE", "DATA_INSUFFICIENT", [], "3天花费不足$240，样本不够")
         return {
             "proposed_action": "DATA_INSUFFICIENT",
             "proposed_new_budget": current_budget,
@@ -434,8 +456,8 @@ def evaluate_entity(
             "optimization_hint": "",
         }
     
-    if last_3d.roas is None or today.roas is None:
-        reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_error", "DATA_ERROR", account_mode, "NO_CHANGE", "NO_CHANGE", ["ROAS不可用"])
+    if last_3d.roas is None:
+        reason = build_decision_reason(today, last_3d, avg_7d, Decimal("0"), "data_error", "DATA_ERROR", account_mode, "NO_CHANGE", "DATA_ERROR", [], "3天ROAS不可用，无法判断实体状态")
         return {
             "proposed_action": "DATA_ERROR",
             "proposed_new_budget": current_budget,
@@ -461,10 +483,14 @@ def evaluate_entity(
             "optimization_hint": "",
         }
     
+    # 当天还没有成交数据（早间扫描常见）：用3日表现替代当日判定，不判异常
+    today_missing = today.roas is None
+    effective_today_roas = today.roas if today.roas is not None else last_3d.roas
+    
     # 判断场景
-    scene, scene_reason = determine_scene(today.roas, last_3d.roas, target_roas)
-    reason_parts.append(scene_reason)
-    reason_parts.append(regime_reason)
+    scene, scene_reason = determine_scene(effective_today_roas, last_3d.roas, target_roas)
+    if today_missing:
+        reason_parts.append(f"当天暂无成交数据，按3日ROAS {last_3d.roas:.2f} 替代当日判定")
     
     # 查动作表
     base_action = "NO_CHANGE"
@@ -492,14 +518,15 @@ def evaluate_entity(
     
     action = base_action
     
-    # 学习期限制
+    # 学习期限制（预算≥$200 不限制，走正常规则）
     if learning_status.lower() in {"learning", "learning limited", "learning_limited"}:
         original = action
         action = learning_limited_action(action, current_budget)
         if original != action:
-            reason_parts.append(f"学习期限制：动作从{original}调整为{action}（预算<$200）")
-        elif action != "NO_CHANGE":
-            reason_parts.append("学习期仅允许小幅调整")
+            budget_txt = f"预算${current_budget:.0f}<$200" if current_budget is not None else "预算<$200"
+            reason_parts.append(f"{budget_txt}，学习期单次最多±10%")
+        elif action not in NO_WRITE_ACTIONS and current_budget is not None and current_budget >= Decimal("200"):
+            reason_parts.append("学习期但预算≥$200，不限制幅度，按正常规则执行")
     
     # 老客预算占比限制（加预算时检查）
     max_rtg_ratio = config.get("max_rtg_budget_ratio", 0.3)
@@ -518,19 +545,24 @@ def evaluate_entity(
         if cooldown_reason:
             reason_parts.append(cooldown_reason)
     
+    # 最终不变/被收缩时，补一句具体原因（NO_CHANGE 也要说清为什么不动）
+    hold_reason = ""
+    if action != base_action or action in {"NO_CHANGE", "COOLDOWN"}:
+        hold_reason = explain_hold(
+            scene=scene,
+            entity_regime=entity_regime,
+            account_mode=account_mode,
+            base_action=base_action,
+            final_action=action,
+            last_3d=last_3d,
+            target_roas=target_roas,
+            reason_parts=reason_parts,
+        )
+    
     # 生成详细理由
-    reason = build_decision_reason(today, last_3d, avg_7d, target_roas, scene, entity_regime, account_mode, base_action, action, reason_parts)
+    reason = build_decision_reason(today, last_3d, avg_7d, target_roas, scene, entity_regime, account_mode, base_action, action, reason_parts, hold_reason)
     
-    # 最后加上预算信息
     final_pct = pct_from_action(action)
-    proposed_budget = None
-    if current_budget and action not in NO_WRITE_ACTIONS:
-        proposed_budget = current_budget * (1 + final_pct)
-    
-    budget_cap = config.get("total_budget_cap", 3500)
-    budget_info = f"【预算】当前${current_budget or 0:.0f} → 建议${proposed_budget or current_budget or 0:.0f}（{final_pct*100:+.0f}%）；总预算cap ${budget_cap}"
-    
-    reason = reason + "；" + budget_info
     
     # 构建返回字典
     proposed_new_budget = None
@@ -549,6 +581,92 @@ def evaluate_entity(
     }
 
 
+SCENE_RULES: dict[str, tuple[str, str]] = {
+    "scene_1_today_pass_3d_pass": ("当天达标 + 3天达标", "按实体状态×账户模式分档加预算"),
+    "scene_2_today_pass_3d_neutral": ("当天达标 + 3天一般", "加预算 +10%"),
+    "scene_3_today_pass_3d_below": ("当天达标 + 3天不达标", "保持不动"),
+    "scene_4_today_neutral_3d_pass": ("当天一般 + 3天达标", "仅放量模式 +10%，其他模式不动"),
+    "scene_5_today_below_3d_pass": ("当天不达标 + 3天达标", "仅保守模式 -10%，其他模式不动"),
+    "scene_6_today_neutral_3d_neutral": ("当天一般 + 3天一般", "保持不动"),
+    "scene_7_today_below_3d_neutral": ("当天不达标 + 3天一般", "减预算 -10%"),
+    "scene_8_today_below_3d_below": ("当天不达标 + 3天不达标", "BEAR -15%；SEVERE_BEAR -25%"),
+    "scene_9_today_neutral_3d_below": ("当天一般 + 3天不达标", "保持不动（3天趋势差，不冒险）"),
+}
+
+REGIME_LABEL = {
+    "BULL": "BULL（3日ROAS≥目标×1.2）",
+    "HEALTHY": "HEALTHY（目标×1.0~1.2）",
+    "NEUTRAL": "NEUTRAL（目标×0.8~1.0）",
+    "BEAR": "BEAR（目标×0.6~0.8）",
+    "SEVERE_BEAR": "SEVERE_BEAR（<目标×0.6）",
+}
+
+MODE_LABEL = {
+    "aggressive": "aggressive（放量模式）",
+    "normal": "normal（正常模式）",
+    "conservative": "conservative（保守模式）",
+}
+
+
+def _delta_txt(pct: float) -> str:
+    if abs(pct) < 0.5:
+        return "持平"
+    return f"{'↑' if pct > 0 else '↓'}{abs(pct):.0f}%"
+
+
+def scene_label(scene: str) -> str:
+    """场景显示名：场景3「当天达标 + 3天不达标」"""
+    base = SCENE_RULES.get(scene)
+    if not base:
+        return ""
+    num = scene.split("_")[1] if "_" in scene else scene
+    return f"场景{num}「{base[0]}」"
+
+
+def explain_hold(
+    scene: str,
+    entity_regime: str,
+    account_mode: str,
+    base_action: str,
+    final_action: str,
+    last_3d: MetricWindow,
+    target_roas: Decimal,
+    reason_parts: list[str],
+) -> str:
+    """最终不调整（或收缩）时说明原因：NO_CHANGE 也要给理由"""
+    # 冷却/学习期/老客占比等硬限制优先引用具体记录
+    if final_action == "COOLDOWN":
+        for p in reason_parts:
+            if "冷却" in p or "调过" in p or "累计" in p:
+                return p
+        return "触发冷却限制"
+    for p in reason_parts:
+        if "学习期" in p or "老客预算占比" in p:
+            return p
+    
+    roas_3d = last_3d.roas
+    ratio = (roas_3d / target_roas) if (roas_3d is not None and target_roas) else None
+    ratio_str = f"{ratio:.2f}" if ratio is not None else "N/A"
+    roas_str = f"{roas_3d:.2f}" if roas_3d is not None else "N/A"
+    mode_cn = MODE_LABEL.get(account_mode, account_mode)
+    
+    if scene == "scene_1_today_pass_3d_pass":
+        return f"3日ROAS {roas_str}（目标×{ratio_str}）未达 HEALTHY 下限（目标×1.0），场景1只对 BULL/HEALTHY 加预算，此档不动"
+    if scene == "scene_3_today_pass_3d_below":
+        return f"当天达标但3日ROAS {roas_str}（目标×{ratio_str}）低于目标×0.8，3天趋势差，场景3规则为保持不动"
+    if scene == "scene_4_today_neutral_3d_pass":
+        return f"当天一般+3天达标属短期波动，场景4仅放量模式才加10%，当前账户为{mode_cn}，不动"
+    if scene == "scene_5_today_below_3d_pass":
+        return f"当天大幅不达标+3天达标，场景5仅保守模式减10%，当前账户为{mode_cn}，不动"
+    if scene == "scene_6_today_neutral_3d_neutral":
+        return "当天和3天ROAS都在目标×0.8~1.0之间，场景6规则为保持不动"
+    if scene == "scene_8_today_below_3d_below":
+        return f"当天和3天都不达标，但实体状态为{entity_regime}（不在BEAR/SEVERE_BEAR档），场景8不下调"
+    if scene == "scene_9_today_neutral_3d_below":
+        return f"当天一般但3日ROAS {roas_str}（目标×{ratio_str}）低于目标×0.8，3天趋势差，规则表该组合按保守原则保持不动"
+    return f"按规则{scene_label(scene) or scene}判定不做调整"
+
+
 def build_decision_reason(
     today: MetricWindow,
     last_3d: MetricWindow,
@@ -560,116 +678,78 @@ def build_decision_reason(
     base_action: str,
     final_action: str,
     reason_parts: list[str],
+    hold_reason: str = "",
 ) -> str:
-    """构建详细的决策理由"""
+    """构建详细的决策理由：数据 → 命中规则 → 基础动作 → 最终动作与幅度"""
     parts = []
     
-    # 1. 当日数据
-    today_roas_str = f"{today.roas:.2f}" if today.roas else "N/A"
-    parts.append(f"【当日】花费${today.spend:.0f}，ROI {today_roas_str}，购买{today.purchase:.0f}单")
-    
-    # ATC%和Checkout%对比7天
-    if avg_7d and avg_7d.atc_rate and avg_7d.checkout_rate:
+    # 1. 当日数据（含ATC/Checkout对比7天）
+    today_roas_str = f"{today.roas:.2f}" if today.roas is not None else "N/A"
+    today_line = f"【当日】花费${today.spend:.0f}，ROI {today_roas_str}，购买{today.purchase:.0f}单"
+    if avg_7d is not None:
         today_atc = today.atc_rate
         today_checkout = today.checkout_rate
-        if today_atc and avg_7d.atc_rate and avg_7d.atc_rate > 0:
+        if today_atc is not None and avg_7d.atc_rate and avg_7d.atc_rate > 0:
             atc_change = (today_atc - avg_7d.atc_rate) / avg_7d.atc_rate * 100
-            atc_str = f"ATC率{today_atc*100:.1f}%（较7天{'↑' if atc_change > 0 else '↓'}{abs(atc_change):.0f}%）"
-            parts.append(atc_str)
-        if today_checkout and avg_7d.checkout_rate and avg_7d.checkout_rate > 0:
+            today_line += f"；ATC率{today_atc*100:.1f}%（较7天{_delta_txt(float(atc_change))}）"
+        if today_checkout is not None and avg_7d.checkout_rate and avg_7d.checkout_rate > 0:
             checkout_change = (today_checkout - avg_7d.checkout_rate) / avg_7d.checkout_rate * 100
-            checkout_str = f"Checkout率{today_checkout*100:.1f}%（较7天{'↑' if checkout_change > 0 else '↓'}{abs(checkout_change):.0f}%）"
-            parts.append(checkout_str)
+            today_line += f"；Checkout率{today_checkout*100:.1f}%（较7天{_delta_txt(float(checkout_change))}）"
+    parts.append(today_line)
     
-    # 2. 3天数据
-    last_3d_roas_str = f"{last_3d.roas:.2f}" if last_3d.roas else "N/A"
-    parts.append(f"【3日】花费${last_3d.spend:.0f}，ROI {last_3d_roas_str}，购买{last_3d.purchase:.0f}单")
+    # 2. 3天数据（带目标倍数）
+    if last_3d.roas is not None and target_roas:
+        ratio = last_3d.roas / target_roas
+        parts.append(f"【3日】花费${last_3d.spend:.0f}，ROI {last_3d.roas:.2f}，购买{last_3d.purchase:.0f}单（目标{target_roas:.2f}，为目标的{ratio:.2f}倍）")
+    else:
+        parts.append(f"【3日】花费${last_3d.spend:.0f}，ROI N/A，购买{last_3d.purchase:.0f}单")
     
     # 3. 7天数据
-    if avg_7d:
-        avg_7d_roas_str = f"{avg_7d.roas:.2f}" if avg_7d.roas else "N/A"
+    if avg_7d is not None:
+        avg_7d_roas_str = f"{avg_7d.roas:.2f}" if avg_7d.roas is not None else "N/A"
         parts.append(f"【7日】花费${avg_7d.spend:.0f}，ROI {avg_7d_roas_str}，购买{avg_7d.purchase:.0f}单")
     
-    # 4. 规则命中（核心）
-    rule_parts = []
+    # 4. 命中规则（核心）：场景 + 实体状态 + 账户模式 → 查表结果
+    if scene in SCENE_RULES:
+        scene_def, scene_rule = SCENE_RULES[scene]
+        rule_line = f"{scene_label(scene)} + 实体{REGIME_LABEL.get(entity_regime, entity_regime)} + 账户{MODE_LABEL.get(account_mode, account_mode)}"
+        base_pct = pct_from_action(base_action)
+        if base_action in NO_WRITE_ACTIONS:
+            rule_line += f"；该场景规则：{scene_rule} → 基础动作 NO_CHANGE（+0%）"
+        else:
+            rule_line += f"；该场景规则：{scene_rule} → 基础动作 {base_action}（{base_pct*100:+.0f}%）"
+        parts.append(f"【命中规则】{rule_line}")
+    else:
+        scene_name = {
+            "brand": "Brand账户规则（不参与自动调价）",
+            "data_insufficient": "数据不足规则（3天花费<$240）",
+            "data_error": "数据异常规则（3天ROAS不可用）",
+            "regime_error": "实体状态异常",
+        }.get(scene, scene)
+        parts.append(f"【命中规则】{scene_name}")
     
-    # 场景
-    scene_map = {
-        "scene_1_today_pass_3d_pass": "场景1：当天达标+3天达标",
-        "scene_2_today_pass_3d_neutral": "场景2：当天达标+3天一般",
-        "scene_3_today_pass_3d_below": "场景3：当天达标+3天较差",
-        "scene_4_today_neutral_3d_pass": "场景4：当天一般+3天达标",
-        "scene_5_today_below_3d_pass": "场景5：当天较差+3天达标",
-        "scene_6_today_neutral_3d_neutral": "场景6：当天一般+3天一般",
-        "scene_7_today_below_3d_neutral": "场景7：当天较差+3天一般",
-        "scene_8_today_below_3d_below": "场景8：当天较差+3天较差",
-        "brand": "Brand账户规则",
-        "data_insufficient": "数据不足规则",
-        "data_error": "数据异常规则",
-        "regime_error": "实体状态异常",
-    }
-    scene_name = scene_map.get(scene, scene)
-    rule_parts.append(scene_name)
-    
-    # 实体状态
-    regime_map = {
-        "BULL": "实体状态：BULL（超标20%+）",
-        "HEALTHY": "实体状态：HEALTHY（达标）",
-        "NEUTRAL": "实体状态：NEUTRAL（差一点达标）",
-        "BEAR": "实体状态：BEAR（较差）",
-        "SEVERE_BEAR": "实体状态：SEVERE_BEAR（很差）",
-    }
-    regime_name = regime_map.get(entity_regime, f"实体状态：{entity_regime}")
-    rule_parts.append(regime_name)
-    
-    # 账户模式
-    mode_map = {
-        "aggressive": "账户模式：aggressive（放量）",
-        "normal": "账户模式：normal（正常）",
-        "conservative": "账户模式：conservative（保守）",
-    }
-    mode_name = mode_map.get(account_mode, f"账户模式：{account_mode}")
-    rule_parts.append(mode_name)
-    
-    parts.append(f"【命中规则】{' + '.join(rule_parts)}")
-    
-    # 5. 动作说明
+    # 5. 动作：基础 → 最终，说清最终幅度和收缩/放大原因
     base_pct = pct_from_action(base_action)
     final_pct = pct_from_action(final_action)
-    
     if final_action in NO_WRITE_ACTIONS:
         if final_action == "COOLDOWN":
-            action_str = f"最终动作：COOLDOWN（冷却期，不调整）"
+            action_str = f"COOLDOWN（{final_pct*100:+.0f}%，冷却期不调整）：{hold_reason or '触发冷却限制'}"
         elif final_action == "NO_CHANGE":
-            action_str = f"最终动作：NO_CHANGE（不调整）"
+            action_str = f"NO_CHANGE（+0%，不调整）：{hold_reason or '按规则保持不动'}"
+        elif final_action in {"DATA_INSUFFICIENT", "DATA_ERROR"}:
+            action_str = f"{final_action}（+0%，不调整，数据保护）：{hold_reason or ('；'.join(reason_parts) if reason_parts else '')}"
         else:
-            action_str = f"最终动作：{final_action}"
+            action_str = f"{final_action}（不调整）"
+    elif base_action != final_action:
+        action_str = f"基础 {base_action}（{base_pct*100:+.0f}%）→ 最终 {final_action}（{final_pct*100:+.0f}%）：{hold_reason or '受限制条件约束收缩'}"
     else:
-        action_str = f"基础动作：{base_action}（{base_pct*100:+.0f}%）"
-        if base_action != final_action:
-            action_str += f" → 最终动作：{final_action}（{final_pct*100:+.0f}%）"
-        else:
-            action_str += f"，最终动作：{final_action}"
-    
+        action_str = f"基础 {base_action}（{base_pct*100:+.0f}%）→ 最终 {final_action}（{final_pct*100:+.0f}%）（未收缩/未放大）"
     parts.append(f"【动作】{action_str}")
     
-    # 6. 其他原因
+    # 6. 其他原因/补充（去掉已在【动作】里引用过的原因，避免重复）
     if reason_parts:
-        parts.append("【补充】" + "；".join(reason_parts))
+        extras = [p for p in reason_parts if p != hold_reason]
+        if extras:
+            parts.append("【补充】" + "；".join(extras))
     
     return "；".join(parts)
-    hint = ""
-    if funnel_anomaly:
-        hint = (
-            "Front-end conversion metrics are strong but did not convert to purchase. "
-            "Manually check creative intent, Landing Page, Checkout, Pixel/CAPI, Attribution, and Meta Advantage+ settings."
-        )
-    new_budget = proposed_budget(current_budget, action, config)
-    return {
-        "proposed_action": action,
-        "proposed_new_budget": str(new_budget) if new_budget is not None else None,
-        "adjustment_percentage": str((pct_from_action(action) * Decimal("100")).quantize(Decimal("1"))) if action not in NO_WRITE_ACTIONS else "0",
-        "reason": reason,
-        "funnel_anomaly": "Yes" if funnel_anomaly else "No",
-        "optimization_hint": hint or funnel_reason,
-    }
