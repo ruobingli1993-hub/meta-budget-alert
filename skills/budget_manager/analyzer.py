@@ -57,6 +57,9 @@ class BudgetRecommendation:
     reason: str
     optimization_hint: str
     account_regime_reason: str = ""
+    account_3d_spend: str = "N/A"
+    account_3d_purchase: str = "N/A"
+    account_3d_purchase_value: str = "N/A"
     matched_rule: str = ""
     cooldown_status: str = "CLEAR"
     api_result: str = "SUCCESS"
@@ -378,9 +381,9 @@ def analyze_entity(
     rtg = rules.is_rtg(campaign.entity_name, config)
     confidence = "HIGH" if last_3d_record.data_status == "SUCCESS" and today_record.data_status == "SUCCESS" and rules.has_last_3d_sample(last_3d, config) and rules.has_today_sample(today, config) else "LOW"
     if last_3d_record.data_status == "ERROR" or today_record.data_status == "ERROR" or avg_30d_record.data_status == "ERROR":
-        decision = rules.decision("DATA_ERROR", entity.daily_budget, config, "Meta Data Provider returned ERROR; budget changes are blocked.", False, "")
+        decision = rules.decision("DATA_ERROR", entity.daily_budget, config, "Meta数据接口返回错误，本次保护性不调整", False, "")
     elif last_3d_record.data_status != "SUCCESS" or today_record.data_status != "SUCCESS":
-        decision = rules.decision("DATA_INSUFFICIENT", entity.daily_budget, config, "Meta Data Provider returned EMPTY data; budget changes are blocked.", False, "")
+        decision = rules.decision("DATA_INSUFFICIENT", entity.daily_budget, config, "Meta数据为空，本次保护性不调整", False, "")
     else:
         decision = rules.evaluate_entity(
             entity_id=entity.entity_id,
@@ -436,6 +439,9 @@ def analyze_entity(
         reason=decision["reason"],
         optimization_hint=decision["optimization_hint"],
         account_regime_reason=account_regime_reason,
+        account_3d_spend=fmt_decimal(account_3d.spend),
+        account_3d_purchase=fmt_decimal(account_3d.purchase),
+        account_3d_purchase_value=fmt_decimal(account_3d.purchase_value),
         matched_rule=f"{budget_model}_{'RTG' if rtg else 'NON_RTG'}_{entity_level}",
         cooldown_status="CLEAR",
         api_result=today_record.data_status,
