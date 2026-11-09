@@ -14,6 +14,7 @@ GitHub Actions 执行器：轮询飞书审批表，执行已同意的调价建�
 
 import os
 import json
+import sys
 import time
 import requests
 from datetime import datetime
@@ -82,21 +83,29 @@ def send_feishu_message(token, text):
 
 
 def list_records_by_status(token, status):
-    """查询所有记录，本地过滤指定状态"""
-    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{TABLE_ID}/records?page_size=100"
+    """分页拉全表，本地过滤指定状态（表内记录可能超过100条，必须翻页）"""
     headers = {"Authorization": f"Bearer {token}"}
-    r = requests.get(url, headers=headers, timeout=15)
-    r.raise_for_status()
-    data = r.json()
-    items = data.get("data", {}).get("items", [])
-
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{TABLE_ID}/records"
     result = []
-    for it in items:
-        st = it["fields"].get("审批状态", "")
-        if isinstance(st, list) and st:
-            st = st[0].get("text", "")
-        if st == status:
-            result.append(it)
+    page_token = None
+    while True:
+        params = {"page_size": 100}
+        if page_token:
+            params["page_token"] = page_token
+        r = requests.get(url, headers=headers, params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json().get("data", {})
+        for it in data.get("items", []):
+            st = it["fields"].get("审批状态", "")
+            if isinstance(st, list) and st:
+                st = st[0].get("text", "")
+            if st == status:
+                result.append(it)
+        if not data.get("has_more"):
+            break
+        page_token = data.get("page_token")
+        if not page_token:
+            break
     return result
 
 
@@ -227,9 +236,19 @@ def execute_one(token, record):
 
 def main():
     print(f"=== 调价执行器启动 {datetime.now().isoformat()} ===")
+
+    # --record-id：只处理指定记录（飞书审批触发时用，避免多个并发run重复执行）
+    target_record_id = None
+    if "--record-id" in sys.argv:
+        idx = sys.argv.index("--record-id")
+        if idx + 1 < len(sys.argv):
+            target_record_id = sys.argv[idx + 1].strip() or None
+    if target_record_id:
+        print(f"指定记录模式：record_id={target_record_id}")
+
     token = get_tenant_token()
     print(f"飞书token获取成功")
-    
+
     success_count = 0
     fail_count = 0
     success_list = []
@@ -237,7 +256,11 @@ def main():
 
     # 执行已同意的
     approved = list_records_by_status(token, "已同意")
-    print(f"找到 {len(approved)} 条「已同意」记录")
+    if target_record_id:
+        approved = [r for r in approved if r.get("record_id") == target_record_id]
+        print(f"找到「已同意」记录（限定本条）：{len(approved)} 条")
+    else:
+        print(f"找到 {len(approved)} 条「已同意」记录")
     for rec in approved:
         try:
             execute_one(token, rec)
