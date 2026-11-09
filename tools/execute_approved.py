@@ -293,7 +293,12 @@ def main():
             execute_one(token, rec)
             success_count += 1
             f = rec["fields"]
-            success_list.append(f"{f.get('实体名称', '?')}: ${f.get('当前预算', 0)} → ${f.get('建议预算', 0)}")
+            cur = float(f.get("当前预算", 0) or 0)
+            new = float(f.get("建议预算", 0) or 0)
+            delta = ((new - cur) / cur * 100) if cur > 0 else 0.0
+            success_list.append(
+                f"{f.get('实体名称', '?')}: 当前 ${cur:.0f} → 建议 ${new:.0f}（{delta:+.1f}%）"
+            )
         except Exception as e:
             print(f"  ❌ 单条执行异常: {e}")
             fail_count += 1
@@ -302,6 +307,10 @@ def main():
 
     # 发消息
     if success_count > 0 or fail_count > 0:
+        try:
+            cap_usd = get_budget_cap_from_base(token)
+        except Exception:
+            cap_usd = BUDGET_FLOOR_USD * 0 + 3500.0
         msg = f"=== 调价执行完成 ===\n"
         msg += f"成功: {success_count} 条\n"
         if success_list:
@@ -311,6 +320,7 @@ def main():
             msg += f"\n失败: {fail_count} 条\n"
             for f in fail_list:
                 msg += f"  ❌ {f}\n"
+        msg += f"\n【预算】总预算 cap ${cap_usd:.0f}"
         try:
             send_feishu_message(token, msg)
             print(f"  已发飞书消息")
