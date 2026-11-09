@@ -14,11 +14,27 @@ from feishu import FeishuWebhookClient
 from meta_api import MetaAPIError, MetaMarketingAPI
 from meta_data_provider import EntityInfo, InsightRecord, MetaDataProvider, decimal_or_zero
 from skills.budget_manager import audit
+from skills.budget_manager import change_history
 from skills.budget_manager import rules
 
 
 logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
+
+_EXEC_HISTORY: list[dict[str, Any]] | None = None
+
+
+def _execution_history() -> list[dict[str, Any]]:
+    """进程内只从审批表读一次"已执行"调价历史，供冷却规则判断"""
+    global _EXEC_HISTORY
+    if _EXEC_HISTORY is None:
+        try:
+            _EXEC_HISTORY = change_history.load_executed_history()
+            logger.info("冷却历史：读到 %d 条已执行调价记录", len(_EXEC_HISTORY))
+        except Exception as e:
+            logger.warning("冷却历史读取失败（本次按无历史处理）: %s", e)
+            _EXEC_HISTORY = []
+    return _EXEC_HISTORY
 
 
 @dataclass
@@ -399,6 +415,7 @@ def analyze_entity(
             learning_status=entity.learning_status,
             config=config,
             rtg_budget_ratio=rtg_budget_ratio,
+            change_history=_execution_history(),
         )
     return BudgetRecommendation(
         account_name=account.name,
@@ -443,7 +460,7 @@ def analyze_entity(
         account_3d_purchase=fmt_decimal(account_3d.purchase),
         account_3d_purchase_value=fmt_decimal(account_3d.purchase_value),
         matched_rule=f"{budget_model}_{'RTG' if rtg else 'NON_RTG'}_{entity_level}",
-        cooldown_status="CLEAR",
+        cooldown_status="ACTIVE" if decision.get("proposed_action") == "COOLDOWN" else "CLEAR",
         api_result=today_record.data_status,
         account_timezone=today_record.timezone,
         today_request_since=today_record.since,
