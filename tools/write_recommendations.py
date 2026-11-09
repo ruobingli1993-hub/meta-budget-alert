@@ -30,6 +30,81 @@ def get_tenant_token():
     return r.json()["tenant_access_token"]
 
 
+def _cell_text(v):
+    """把飞书单元格值统一成字符串"""
+    if isinstance(v, list):
+        parts = []
+        for x in v:
+            if isinstance(x, dict):
+                parts.append(str(x.get("text") or x.get("name") or ""))
+            else:
+                parts.append(str(x))
+        return "".join(parts).strip()
+    if isinstance(v, dict):
+        return str(v.get("text") or v.get("name") or "").strip()
+    return str(v or "").strip()
+
+
+def _fetch_all_records(base_token, table_id, headers):
+    """翻页拉全表记录"""
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records"
+    items = []
+    page_token = ""
+    while True:
+        params = {"page_size": 100}
+        if page_token:
+            params["page_token"] = page_token
+        r = requests.get(url, headers=headers, params=params, timeout=20)
+        d = r.json()
+        if d.get("code") != 0:
+            raise RuntimeError(f"读表失败: {d}")
+        data = d.get("data", {}) or {}
+        items.extend(data.get("items", []) or [])
+        page_token = data.get("page_token", "") or ""
+        if not data.get("has_more"):
+            break
+    return items
+
+
+def _expire_stale_pending(base_token, table_id, headers, now_ms):
+    """把扫描日期早于本轮的「待审批」记录标为已过期，保证同一实体只留最新一轮待审批"""
+    stale = []
+    for it in _fetch_all_records(base_token, table_id, headers):
+        f = it.get("fields", {}) or {}
+        status = _cell_text(f.get("审批状态"))
+        if status != "待审批":
+            continue
+        scan_ts = f.get("扫描日期")
+        if isinstance(scan_ts, (int, float)) and scan_ts < now_ms:
+            stale.append(it.get("record_id"))
+
+    if not stale:
+        return 0
+
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{base_token}/tables/{table_id}/records/batch_update"
+    done = 0
+    for i in range(0, len(stale), 200):
+        chunk = stale[i:i + 200]
+        payload = {
+            "records": [
+                {
+                    "record_id": rid,
+                    "fields": {
+                        "审批状态": "已过期",
+                        "执行结果": "已过期：新一轮扫描已覆盖，未执行（影子留档）",
+                    },
+                }
+                for rid in chunk
+            ]
+        }
+        r = requests.post(url, headers=headers, json=payload, timeout=20)
+        res = r.json()
+        if res.get("code") != 0:
+            raise RuntimeError(f"过期回写失败: {res}")
+        done += len(chunk)
+    return done
+
+
 def write_recommendations_to_bitable(recommendations, run_id):
     base_token = os.environ.get("FEISHU_BASE_TOKEN", "TivqbYjK9a2DRbsfVs7cdlo9nJg")
     table_id = os.environ.get("FEISHU_TABLE_ID", "tblfNw0JE6uL4D1d")
@@ -42,6 +117,14 @@ def write_recommendations_to_bitable(recommendations, run_id):
 
     written = 0
     now_ms = int(time.time() * 1000)  # 飞书datetime字段需要毫秒时间戳
+
+    # 过期清理：先把早于本轮的「待审批」标为已过期，只保留最新一轮，避免同一实体多条建议并存被批量执行
+    try:
+        expired_n = _expire_stale_pending(base_token, table_id, headers, now_ms)
+        if expired_n:
+            print(f"已过期 {expired_n} 条旧「待审批」建议（只保留本轮）")
+    except Exception as e:
+        print(f"Warning: 过期清理失败（ignored）: {e}")
 
     for rec in recommendations:
         action = getattr(rec, "proposed_action", "")
