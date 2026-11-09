@@ -16,6 +16,7 @@ import os
 import json
 import sys
 import time
+import uuid
 import requests
 from datetime import datetime
 
@@ -142,6 +143,15 @@ def meta_update_budget(entity_id, target_cents):
     return result
 
 
+def get_record(token, record_id):
+    """读取单条记录"""
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{BASE_TOKEN}/tables/{TABLE_ID}/records/{record_id}"
+    headers = {"Authorization": f"Bearer {token}"}
+    r = requests.get(url, headers=headers, timeout=10)
+    r.raise_for_status()
+    return r.json().get("data", {}).get("record", {})
+
+
 def execute_one(token, record):
     """执行单条调价建议"""
     rid = record["record_id"]
@@ -155,14 +165,31 @@ def execute_one(token, record):
 
     print(f"\n=== 执行: {sug_id} ===")
     print(f"  实体: {entity_name} ({entity_id})")
+
+    # 0) 抢占锁：多条审批可能同时触发多个run，只有最终写入的uuid能通过复核，避免重复调价
+    lock_id = uuid.uuid4().hex
+    update_record(token, rid, {
+        "审批状态": "执行中",
+        "执行结果": f"LOCK:{lock_id}",
+    })
+    time.sleep(1.5)
+    try:
+        cur = get_record(token, rid)
+        cur_txt = json.dumps(cur.get("fields", {}).get("执行结果", ""), ensure_ascii=False)
+    except Exception as e:
+        print(f"  锁复核失败（继续执行）: {e}")
+        cur_txt = lock_id
+    if lock_id not in cur_txt:
+        print(f"  跳过：已被其他并发执行任务接单")
+        return
     print(f"  当前: ${current_usd:.2f} → 建议: ${suggested_usd:.2f}")
 
-    # 1) 先标记为「执行中」（防止重复执行）
+    # 1) 锁复核通过，标记为已接单
     update_record(token, rid, {
         "审批状态": "执行中",
         "执行结果": "已接单，正在调用Meta API...",
     })
-    
+
     # 读总预算上限
     budget_cap = get_budget_cap_from_base(token)
 
