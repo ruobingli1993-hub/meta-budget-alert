@@ -31,8 +31,8 @@ def get_tenant_token():
 
 
 def write_recommendations_to_bitable(recommendations, run_id):
-    base_token = os.environ["FEISHU_BASE_TOKEN"]
-    table_id = os.environ["FEISHU_TABLE_ID"]
+    base_token = os.environ.get("FEISHU_BASE_TOKEN", "TivqbYjK9a2DRbsfVs7cdlo9nJg")
+    table_id = os.environ.get("FEISHU_TABLE_ID", "tblfNw0JE6uL4D1d")
     token = get_tenant_token()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
@@ -49,6 +49,9 @@ def write_recommendations_to_bitable(recommendations, run_id):
         # 决定审批状态
         if action in increase_actions or action in decrease_actions or action == "NO_CHANGE":
             approval_status = "待审批"
+        elif action in {"DATA_INSUFFICIENT", "COOLDOWN"}:
+            # 3天花费不足样本门槛/冷却期，属规则判定不调价，不是系统异常
+            approval_status = "不调整"
         else:
             approval_status = "数据异常"
 
@@ -115,20 +118,11 @@ def write_recommendations_to_bitable(recommendations, run_id):
             snap_parts.append(f"Checkout:{co}")
         data_snapshot = " | ".join(snap_parts)
 
-        # 决策理由（中文人话格式）
-        reason_parts = []
-        if spend_7d and spend_7d != "N/A":
-            roas7_val = float(roas_7d) if roas_7d else 0
-            hit = "达标" if roas7_val >= target_roas else "未达"
-            reason_parts.append(f"近7天：花费${spend_7d}、购买{purchase_7d}单、ROAS {roas_7d or 'N/A'}（目标{target_roas}，{hit}）")
-        if roas_3d:
-            reason_parts.append(f"近3天ROAS {roas_3d}")
-        if roas_today:
-            reason_parts.append(f"今天ROAS {roas_today}")
-        is_increase = action.startswith("INCREASE")
-        action_cn = "加" if is_increase else "减"
-        reason_parts.append(f"建议{action_cn}预算{adj_pct}%（${current_budget} → ${new_budget}）")
-        reason = "；".join(reason_parts)
+        # 决策理由：优先用规则引擎生成的详细理由（含命中规则+基础动作→最终动作+最终幅度）
+        reason = getattr(rec, "reason", "") or ""
+        if not reason:
+            # 兜底（理论上不会走到）
+            reason = f"决策 {action}，数据：7日花费${spend_7d}/3日ROAS {roas_3d or 'N/A'}/今日ROAS {roas_today or 'N/A'}"
 
         fields = {
             "建议ID": f"SHD-{run_id[-8:]}-{meta_object_id[-6:]}",
@@ -174,7 +168,7 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
     app_id = os.environ["FEISHU_APP_ID"]
     app_secret = os.environ["FEISHU_APP_SECRET"]
     user_open_id = "ou_2bdd5af9ba3b849a38bb372535d6708f"  # 李若冰（广告自动化调整执行器应用下的open_id）
-    base_token = os.environ["FEISHU_BASE_TOKEN"]
+    base_token = os.environ.get("FEISHU_BASE_TOKEN", "TivqbYjK9a2DRbsfVs7cdlo9nJg")
 
     # 统计overall数据
     total_spend = 0.0
@@ -246,11 +240,54 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
 
     # 消息内容
     total_budget_cap = 3500
+    try:
+        import pathlib
+        cfg_path = pathlib.Path(__file__).resolve().parents[1] / "skills" / "budget_manager" / "config.json"
+        total_budget_cap = json.loads(cfg_path.read_text(encoding="utf-8")).get("budget_cap_usd", 3500)
+    except Exception:
+        pass
+
+    # 各账户宏观表现（账户级3天窗口，同账户只取一条）
+    MODE_CN = {"aggressive": "放量模式", "normal": "正常模式", "conservative": "保守模式"}
+    account_rows: dict[str, dict] = {}
+    for rec in recommendations:
+        aid = getattr(rec, "account_id", "") or ""
+        if not aid or aid in account_rows:
+            continue
+        account_rows[aid] = {
+            "name": ACCOUNT_MAP.get(aid) or getattr(rec, "account_name", aid),
+            "mode": MODE_CN.get(getattr(rec, "account_regime", ""), getattr(rec, "account_regime", "未知")),
+            "spend": getattr(rec, "account_3d_spend", "N/A"),
+            "purchase": getattr(rec, "account_3d_purchase", "N/A"),
+            "value": getattr(rec, "account_3d_purchase_value", "N/A"),
+            "roas": getattr(rec, "account_3d_roas", None),
+        }
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    acct_lines = []
+    sum_spend = sum_value = 0.0
+    sum_purchase = 0
+    for row in account_rows.values():
+        roas_txt = f"{_f(row['roas']):.2f}" if row["roas"] not in (None, "N/A", "") else "N/A"
+        acct_lines.append(
+            f"- {row['name']}：花费 ${_f(row['spend']):.2f} | 购买 {int(_f(row['purchase']))} 单 | ROAS {roas_txt} | {row['mode']}"
+        )
+        sum_spend += _f(row["spend"])
+        sum_value += _f(row["value"])
+        sum_purchase += int(_f(row["purchase"]))
+    total_roas_txt = f"{sum_value / sum_spend:.2f}" if sum_spend > 0 else "N/A"
+
     message_content = (
         f"**本次扫描结果**\n"
         f"放量 {increase_count} 条 | 控量 {decrease_count} 条 | 不变 {no_change_count} 条\n\n"
-        f"**Overall 实时表现（今日）**\n"
-        f"花费 ${total_spend:.2f} | 购买 {total_purchase} 单 | ROAS {overall_roas:.2f}\n\n"
+        f"**整体账户表现（近3天）**\n"
+        + ("\n".join(acct_lines) if acct_lines else "暂无账户数据")
+        + f"\n\n**合计**：花费 ${sum_spend:.2f} | 购买 {sum_purchase} 单 | ROAS {total_roas_txt}\n\n"
         f"**预算概况**\n"
         f"当前总预算 ${total_current_budget:.0f} → 建议总预算 ${total_new_budget:.0f}（{budget_change_pct:+.1f}%）；总预算cap ${total_budget_cap}"
     )
