@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+# 冷却规则按北京时间判断"今天"：GitHub Actions 运行在 UTC，直接用 date.today() 会在北京 0-8 点差一天
+CST = timezone(timedelta(hours=8))
+
+
+def today_local() -> date:
+    return datetime.now(CST).date()
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -270,13 +277,13 @@ def load_change_history(config: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_entity_today_changes(entity_id: str, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """获取某个实体今天的调整记录"""
-    today_str = date.today().isoformat()
+    today_str = today_local().isoformat()
     return [r for r in history if r.get("entity_id") == entity_id and r.get("date") == today_str]
 
 
 def get_entity_recent_changes(entity_id: str, history: list[dict[str, Any]], days: int = 7) -> list[dict[str, Any]]:
     """获取某个实体最近几天的调整记录"""
-    cutoff = date.today() - timedelta(days=days)
+    cutoff = today_local() - timedelta(days=days)
     result = []
     for r in history:
         if r.get("entity_id") != entity_id:
@@ -357,7 +364,7 @@ def check_cooldown_limits(
         # 看最后一次调整是哪天
         if sorted_dates:
             last_change_date = date.fromisoformat(sorted_dates[-1])
-            days_since_last = (date.today() - last_change_date).days
+            days_since_last = (today_local() - last_change_date).days
             if days_since_last < cooldown_days:
                 cooldown_remaining = cooldown_days - days_since_last
                 in_cooldown = True
@@ -377,7 +384,7 @@ def record_change(entity_id: str, entity_name: str, action: str, old_budget: Dec
     direction = "increase" if action in INCREASE_ACTIONS else "decrease"
     
     record = {
-        "date": date.today().isoformat(),
+        "date": today_local().isoformat(),
         "entity_id": entity_id,
         "entity_name": entity_name,
         "action": action,
@@ -429,6 +436,7 @@ def evaluate_entity(
     learning_status: str,
     config: dict[str, Any],
     rtg_budget_ratio: float = 0,
+    change_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     reason_parts = []
     
@@ -541,6 +549,7 @@ def evaluate_entity(
             action=action,
             current_budget=current_budget,
             config=config,
+            history=change_history,
         )
         if cooldown_reason:
             reason_parts.append(cooldown_reason)
