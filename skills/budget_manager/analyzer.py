@@ -76,6 +76,9 @@ class BudgetRecommendation:
     account_3d_spend: str = "N/A"
     account_3d_purchase: str = "N/A"
     account_3d_purchase_value: str = "N/A"
+    account_today_spend: str = "N/A"
+    account_today_purchase: str = "N/A"
+    account_today_purchase_value: str = "N/A"
     matched_rule: str = ""
     cooldown_status: str = "CLEAR"
     api_result: str = "SUCCESS"
@@ -459,6 +462,9 @@ def analyze_entity(
         account_3d_spend=fmt_decimal(account_3d.spend),
         account_3d_purchase=fmt_decimal(account_3d.purchase),
         account_3d_purchase_value=fmt_decimal(account_3d.purchase_value),
+        account_today_spend=fmt_decimal(account_today.spend),
+        account_today_purchase=fmt_decimal(account_today.purchase),
+        account_today_purchase_value=fmt_decimal(account_today.purchase_value),
         matched_rule=f"{budget_model}_{'RTG' if rtg else 'NON_RTG'}_{entity_level}",
         cooldown_status="ACTIVE" if decision.get("proposed_action") == "COOLDOWN" else "CLEAR",
         api_result=today_record.data_status,
