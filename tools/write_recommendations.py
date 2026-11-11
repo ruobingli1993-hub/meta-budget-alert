@@ -129,12 +129,9 @@ def write_recommendations_to_bitable(recommendations, run_id):
     for rec in recommendations:
         action = getattr(rec, "proposed_action", "")
 
-        # 决定审批状态
-        if action in increase_actions or action in decrease_actions or action == "NO_CHANGE":
+        # 决定审批状态：所有实体都给用户审批，系统保守不代表用户不能拍板
+        if action in increase_actions or action in decrease_actions or action in {"NO_CHANGE", "DATA_INSUFFICIENT", "COOLDOWN"}:
             approval_status = "待审批"
-        elif action in {"DATA_INSUFFICIENT", "COOLDOWN"}:
-            # 3天花费不足样本门槛/冷却期，属规则判定不调价，不是系统异常
-            approval_status = "不调整"
         else:
             approval_status = "数据异常"
 
