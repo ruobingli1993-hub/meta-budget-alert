@@ -1,8 +1,6 @@
 name: 影子扫描（出调价建议）
 
 on:
-  schedule:
-    - cron: "0 0,6,13 * * *"   # 早8点/下午2点/晚9点（北京时间）
   workflow_dispatch:
 
 jobs:
