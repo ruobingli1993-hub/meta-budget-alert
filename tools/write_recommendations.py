@@ -327,7 +327,7 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
     except Exception:
         pass
 
-    # 各账户宏观表现（账户级3天窗口，同账户只取一条）
+    # 各账户宏观表现（账户级当日+近3天窗口，同账户只取一条）
     MODE_CN = {"aggressive": "放量模式", "normal": "正常模式", "conservative": "保守模式"}
     account_rows: dict[str, dict] = {}
     for rec in recommendations:
@@ -337,6 +337,10 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         account_rows[aid] = {
             "name": ACCOUNT_MAP.get(aid) or getattr(rec, "account_name", aid),
             "mode": MODE_CN.get(getattr(rec, "account_regime", ""), getattr(rec, "account_regime", "未知")),
+            "today_spend": getattr(rec, "account_today_spend", "N/A"),
+            "today_purchase": getattr(rec, "account_today_purchase", "N/A"),
+            "today_value": getattr(rec, "account_today_purchase_value", "N/A"),
+            "today_roas": getattr(rec, "account_today_roas", None),
             "spend": getattr(rec, "account_3d_spend", "N/A"),
             "purchase": getattr(rec, "account_3d_purchase", "N/A"),
             "value": getattr(rec, "account_3d_purchase_value", "N/A"),
@@ -349,26 +353,60 @@ def send_approval_notification(recommendations, written_count: int, run_id: str)
         except (TypeError, ValueError):
             return 0.0
 
+    def _roas_txt(v):
+        return f"{_f(v):.2f}" if v not in (None, "N/A", "") else "N/A"
+
     acct_lines = []
-    sum_spend = sum_value = 0.0
-    sum_purchase = 0
+    sum_3d_spend = sum_3d_value = 0.0
+    sum_3d_purchase = 0
+    sum_today_spend = sum_today_value = 0.0
+    sum_today_purchase = 0
     for row in account_rows.values():
-        roas_txt = f"{_f(row['roas']):.2f}" if row["roas"] not in (None, "N/A", "") else "N/A"
+        t_spend = _f(row["today_spend"])
+        t_purchase = int(_f(row["today_purchase"]))
+        t_value = _f(row["today_value"])
+        t_roas = _roas_txt(row["today_roas"])
+        d_spend = _f(row["spend"])
+        d_purchase = int(_f(row["purchase"]))
+        d_value = _f(row["value"])
+        d_roas = _roas_txt(row["roas"])
         acct_lines.append(
-            f"- {row['name']}：花费 ${_f(row['spend']):.2f} | 购买 {int(_f(row['purchase']))} 单 | ROAS {roas_txt} | {row['mode']}"
+            f"- {row['name']}：当日 ${t_spend:.0f}/{t_purchase}单/{t_roas} ｜ 近3天 ${d_spend:.0f}/{d_purchase}单/{d_roas} ｜ {row['mode']}"
         )
-        sum_spend += _f(row["spend"])
-        sum_value += _f(row["value"])
-        sum_purchase += int(_f(row["purchase"]))
-    total_roas_txt = f"{sum_value / sum_spend:.2f}" if sum_spend > 0 else "N/A"
+        sum_today_spend += t_spend
+        sum_today_purchase += t_purchase
+        sum_today_value += t_value
+        sum_3d_spend += d_spend
+        sum_3d_purchase += d_purchase
+        sum_3d_value += d_value
+
+    def _status(spend, value, target):
+        if spend <= 0:
+            return "N/A"
+        roas = value / spend
+        return "达标" if roas >= target else "未达标"
+
+    try:
+        target_roas = float(json.loads((pathlib.Path(__file__).resolve().parents[1] / "skills" / "budget_manager" / "config.json").read_text(encoding="utf-8")).get("weighted_target_roas", 2.15))
+    except Exception:
+        target_roas = 2.15
+
+    today_roas = sum_today_value / sum_today_spend if sum_today_spend > 0 else 0
+    d3_roas = sum_3d_value / sum_3d_spend if sum_3d_spend > 0 else 0
+    today_roas_txt = f"{today_roas:.2f}" if sum_today_spend > 0 else "N/A"
+    d3_roas_txt = f"{d3_roas:.2f}" if sum_3d_spend > 0 else "N/A"
+    today_status = _status(sum_today_spend, sum_today_value, target_roas)
+    d3_status = _status(sum_3d_spend, sum_3d_value, target_roas)
 
     message_content = (
         f"**本次扫描结果**\n"
         f"放量 {increase_count} 条 | 控量 {decrease_count} 条 | 不变 {no_change_count} 条\n\n"
-        f"**整体账户表现（近3天）**\n"
+        f"**整体表现**\n"
+        f"- 当日：花费 ${sum_today_spend:.0f} | 购买 {sum_today_purchase} 单 | ROAS {today_roas_txt} | {today_status}\n"
+        f"- 近3天：花费 ${sum_3d_spend:.0f} | 购买 {sum_3d_purchase} 单 | ROAS {d3_roas_txt} | {d3_status}（目标 {target_roas:.2f}）\n\n"
+        f"**分账户**\n"
         + ("\n".join(acct_lines) if acct_lines else "暂无账户数据")
-        + f"\n\n**合计**：花费 ${sum_spend:.2f} | 购买 {sum_purchase} 单 | ROAS {total_roas_txt}\n\n"
-        f"**预算概况**\n"
+        + f"\n\n**预算概况**\n"
         f"当前总预算 ${total_current_budget:.0f} → 建议总预算 ${total_new_budget:.0f}（{budget_change_pct:+.1f}%）；总预算cap ${total_budget_cap}"
     )
 
