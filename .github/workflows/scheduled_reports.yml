@@ -17,12 +17,6 @@ on:
         description: "UTC timestamp supplied by the external scheduler"
         required: false
         type: string
-  schedule:
-    - cron: "0 0 * * *"
-    - cron: "30 7 * * *"
-    - cron: "0 10 * * *"
-    - cron: "0 12 * * *"
-
 concurrency:
   group: scheduled-meta-reports-production
   cancel-in-progress: false
