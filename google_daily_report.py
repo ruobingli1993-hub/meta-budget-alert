@@ -338,12 +338,23 @@ def build_report_text(
     results: list[tuple[str, list[CampaignDaily]]],
     failures: list[tuple[str, str]],
     date_str: str,
+    report_date: str,
+    is_realtime: bool = False,
     today_spend: Decimal = Decimal("0"),
     yesterday_summary: PeriodSummary | None = None,
     three_day_summary: PeriodSummary | None = None,
     seven_day_summary: PeriodSummary | None = None,
 ) -> str:
     lines: list[str] = [f"Google Ads 日报 | {date_str}", ""]
+    if is_realtime:
+        account_now = datetime.now(ACCOUNT_TZ)
+        lines.append(
+            f"Data window: account date {report_date}, "
+            f"through hour {account_now.hour:02d}:59 {account_now.tzname()}"
+        )
+    else:
+        lines.append(f"Data window: account date {report_date}, complete day")
+    lines.append("")
 
     if failures:
         lines.append("⚠️ 部分账户获取失败：")
@@ -519,7 +530,7 @@ def build_report_text(
     return "\n".join(lines)
 
 
-def run_daily_report(date_str: str | None = None, label: str | None = None) -> str:
+def run_daily_report(date_str: str | None = None, label: str | None = None, is_realtime: bool = False) -> str:
     if not GOOGLE_ADS_CUSTOMER_IDS:
         raise RuntimeError("GOOGLE_ADS_CUSTOMER_IDS is empty; check .env")
 
@@ -609,6 +620,7 @@ def run_daily_report(date_str: str | None = None, label: str | None = None) -> s
 
     return build_report_text(
         results, failures, report_label,
+        report_date, is_realtime,
         today_spend=today_spend,
         yesterday_summary=yesterday_summary,
         three_day_summary=three_day_summary,
@@ -635,7 +647,7 @@ def main() -> None:
     else:
         report_date = args.date or (la_today() - timedelta(days=1)).isoformat()
         report_label = report_date
-    report = run_daily_report(report_date, label=report_label)
+    report = run_daily_report(report_date, label=report_label, is_realtime=args.today)
     print(report)
 
     if args.send:
