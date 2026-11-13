@@ -64,7 +64,7 @@ def build_report_plan(mode: ReportMode, account_timezone: str = "America/Phoenix
         current = PeriodSpec("yesterday_complete_day", yesterday.isoformat(), yesterday.isoformat())
         comp7 = PeriodSpec("previous_7_complete_day_average", (yesterday - timedelta(days=7)).isoformat(), (yesterday - timedelta(days=1)).isoformat())
         comp30 = PeriodSpec("previous_30_complete_day_average", (yesterday - timedelta(days=30)).isoformat(), (yesterday - timedelta(days=1)).isoformat())
-        return ReportPlan(mode, "Meta Daily Close", "15:30 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, False, "HIGH", "")
+        return ReportPlan(mode, "Meta Daily Close", "16:00 Asia/Shanghai", beijing_time, local_time, current, comp7, comp30, False, "HIGH", "")
     if mode == "early-pulse":
         current = PeriodSpec("early_pulse_same_time", today.isoformat(), today.isoformat(), includes_today=True)
         comp7 = PeriodSpec("last_7_same_time_average", (today - timedelta(days=7)).isoformat(), (today - timedelta(days=1)).isoformat())
@@ -148,7 +148,7 @@ def run_scheduled_report(mode: ReportMode, as_of: str | None = None) -> int:
 
 def scheduled_time(mode: ReportMode, observed_at: datetime) -> datetime:
     observed = observed_at.astimezone(BEIJING_TZ)
-    hour, minute = {"morning": (8, 0), "daily-close": (15, 30), "early-pulse": (18, 0), "evening": (20, 0)}[mode]
+    hour, minute = {"morning": (8, 0), "daily-close": (16, 0), "early-pulse": (18, 0), "evening": (20, 0)}[mode]
     scheduled = observed.replace(hour=hour, minute=minute, second=0, microsecond=0)
     # If a run is delayed past Beijing midnight, the latest occurrence of the
     # slot belongs to the previous calendar day, not to a future slot today.
