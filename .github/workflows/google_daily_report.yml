@@ -18,7 +18,7 @@ on:
         required: false
         type: string
   # 不再用 GitHub schedule，改由飞书定时工作流 dispatch
-  # 北京 8:00 morning / 16:00 daily-close / 18:00 early-pulse / 20:00 evening
+  # 北京 8:00 morning(LA当日实时) / 16:00 daily-close(LA前一天整天) / 18:00 early-pulse(当日实时) / 20:00 evening(当日实时)
 
 concurrency:
   group: google-daily-report-production
@@ -83,11 +83,11 @@ jobs:
         shell: bash
         run: |
           MODE="${{ steps.mode.outputs.mode }}"
-          if [ "$MODE" = "morning" ] || [ "$MODE" = "daily-close" ]; then
-            # 昨天整天（LA 前一自然日）
+          if [ "$MODE" = "daily-close" ]; then
+            # daily-close：LA 前一自然日整天
             python google_daily_report.py --send
           else
-            # early-pulse / evening：当日实时累计
+            # morning / early-pulse / evening：LA 当日实时累计
             python google_daily_report.py --today --send
           fi
 
