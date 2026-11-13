@@ -2,6 +2,7 @@ name: 影子扫描（出调价建议）
 
 on:
   workflow_dispatch:
+    # 不再用 GitHub schedule，改由飞书定时工作流（早8/下午2/晚9）dispatch，避免免费账户时间漂移
 
 jobs:
   scan:
@@ -27,5 +28,6 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_BASE_TOKEN: ${{ secrets.FEISHU_BASE_TOKEN }}
           FEISHU_TABLE_ID: ${{ secrets.FEISHU_TABLE_ID }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
         run: python main.py --budget-manager-preview
