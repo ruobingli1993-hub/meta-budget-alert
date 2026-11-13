@@ -284,9 +284,9 @@ def preview() -> dict[str, Any]:
     except Exception as exc:
         # webhook发送失败不影响主流程，影子扫描本身已经完成
         status = "SUCCESS"
-        errors.append(f"Feishu webhook failed (ignored): {type(exc).__name__}")
-        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_WARNING", "error": type(exc).__name__})
-        print(f"Warning: Feishu webhook send failed (ignored): {type(exc).__name__}")
+        errors.append(f"Feishu webhook failed (ignored): {exc}")
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "FEISHU_WARNING", "error": str(exc)})
+        print(f"Warning: Feishu webhook send failed (ignored): {exc}")
 
     # 写入飞书多维表格（审批表）
     try:
@@ -296,9 +296,9 @@ def preview() -> dict[str, Any]:
         written = write_recommendations_to_bitable(recommendations, run_id)
         print(f"Written {written} recommendations to Feishu bitable...")
     except Exception as exc:
-        errors.append(f"Feishu bitable write failed (ignored): {type(exc).__name__}")
-        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "BITABLE_WARNING", "error": type(exc).__name__})
-        print(f"Warning: Feishu bitable write failed (ignored): {type(exc).__name__}")
+        errors.append(f"Feishu bitable write failed (ignored): {exc}")
+        audit.append_log(config, {"run_id": run_id, "mode": "preview", "event": "BITABLE_WARNING", "error": str(exc)})
+        print(f"Warning: Feishu bitable write failed (ignored): {exc}")
 
     finally:
         end_time = datetime.now().isoformat(timespec="seconds")
