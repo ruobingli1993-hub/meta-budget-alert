@@ -21,7 +21,8 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
@@ -57,10 +58,21 @@ GOOGLE_ACCOUNT_NAMES = {
 # 养户账户：仅报花费，不报转化 / 不参与 ROI 判断
 SPEND_ONLY_ACCOUNTS = {"5188331105"}
 
+# 账户时区（LA）：日报取数日期一律以 LA 自然日为准，避免容器 UTC 跨日取错天
+try:
+    ACCOUNT_TZ = ZoneInfo("America/Los_Angeles")
+except Exception:  # 无 tzdata 时回退冬令时 -8
+    ACCOUNT_TZ = timezone(timedelta(hours=-8))
+
+
+def la_today() -> date:
+    """账户时区(LA)当前自然日。"""
+    return datetime.now(ACCOUNT_TZ).date()
+
 # 业务口径（来自项目文档 GOOGLE_AUTOMATION_PROJECT.md §4）
 DELAY_FACTOR_3 = Decimal("1.3")
 DELAY_FACTOR_7 = Decimal("1.44")
-TARGET_ROAS_NONBRAND = Decimal("1.35")   # search/shopping/pmax，不含 brand
+TARGET_ROAS_NONBRAND = Decimal("1.2")    # search/shopping/pmax，不含 brand
 TARGET_ROAS_BRAND = Decimal("6")         # search 且含 brand
 
 # 窗口相对 7 天目标的系数：窗口门槛 = 7天目标 × factor
@@ -502,7 +514,7 @@ def build_report_text(
             lines.append(f"  对照加权当天门槛 {fmt_number(d1_weighted)}：{'达标 ✅' if ok else '未达 ⛔'}")
         lines.append("")
 
-    lines.append("口径：NonBrand(SEARCH/SHOPPING/PMAX) 目标1.35→门槛0.94；Brand(SEARCH) 目标6→门槛4.17")
+    lines.append("口径：NonBrand(SEARCH/SHOPPING/PMAX) 目标1.20→门槛0.83；Brand(SEARCH) 目标6→门槛4.17")
     lines.append("养户账户（Cycling-1）不参与 ROI 判断。本日报只读自 Google Ads API，不含写操作。")
     return "\n".join(lines)
 
@@ -511,7 +523,7 @@ def run_daily_report(date_str: str | None = None, label: str | None = None) -> s
     if not GOOGLE_ADS_CUSTOMER_IDS:
         raise RuntimeError("GOOGLE_ADS_CUSTOMER_IDS is empty; check .env")
 
-    report_date = date_str or (date.today() - timedelta(days=1)).isoformat()
+    report_date = date_str or (la_today() - timedelta(days=1)).isoformat()
     report_label = label or report_date
     config = build_google_config()
 
@@ -618,10 +630,10 @@ def main() -> None:
     )
 
     if args.today:
-        report_date = date.today().isoformat()
+        report_date = la_today().isoformat()
         report_label = f"{report_date}（当日累计·实时）"
     else:
-        report_date = args.date or (date.today() - timedelta(days=1)).isoformat()
+        report_date = args.date or (la_today() - timedelta(days=1)).isoformat()
         report_label = report_date
     report = run_daily_report(report_date, label=report_label)
     print(report)
