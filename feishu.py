@@ -36,15 +36,24 @@ class FeishuWebhookClient:
                     json=payload,
                     timeout=REQUEST_TIMEOUT_SECONDS,
                 )
-                response.raise_for_status()
-                result = response.json()
-                if result.get("code") not in (0, None):
-                    raise FeishuError(f"Feishu webhook error: {result}")
+                try:
+                    result = response.json()
+                except ValueError:
+                    result = None
+                if response.status_code >= 400:
+                    raise FeishuError(
+                        f"HTTP {response.status_code} body={response.text[:300]}"
+                    )
+                if result is not None and result.get("code") not in (0, None):
+                    raise FeishuError(
+                        f"feishu code={result.get('code')} "
+                        f"msg={result.get('msg') or result.get('message')} body={result}"
+                    )
                 sent_at = datetime.now().astimezone().isoformat(timespec="seconds")
                 delivery = {
                     "http_status": response.status_code,
-                    "feishu_code": result.get("code"),
-                    "feishu_message": result.get("msg") or result.get("message"),
+                    "feishu_code": (result or {}).get("code"),
+                    "feishu_message": (result or {}).get("msg") or (result or {}).get("message"),
                     "sent_at": sent_at,
                 }
                 logger.info(
@@ -59,12 +68,13 @@ class FeishuWebhookClient:
 
                 sleep_seconds = REQUEST_BACKOFF_SECONDS * attempt
                 logger.warning(
-                    "Feishu webhook request failed on attempt %s/%s. Retrying in %.1fs.",
+                    "Feishu webhook request failed on attempt %s/%s: %s. Retrying in %.1fs.",
                     attempt,
                     REQUEST_MAX_RETRIES,
+                    exc,
                     sleep_seconds,
                 )
                 time.sleep(sleep_seconds)
 
-        error_name = type(last_error).__name__ if last_error else "UnknownError"
-        raise FeishuError(f"Feishu webhook request failed after retries: {error_name}") from last_error
+        detail = str(last_error) if last_error else "UnknownError"
+        raise FeishuError(f"Feishu webhook request failed after retries: {detail}") from last_error
