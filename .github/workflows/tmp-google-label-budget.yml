@@ -1,0 +1,72 @@
+name: tmp-google-label-budget
+on:
+  workflow_dispatch:
+jobs:
+  q:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+      GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+      GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+      GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+      GOOGLE_ADS_CUSTOMER_IDS: ${{ secrets.GOOGLE_ADS_CUSTOMER_IDS }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install "google-ads>=24.0.0,<36.0.0"
+      - name: query
+        run: |
+          python - <<'PY'
+          import os, sys
+          from google.ads.googleads.client import GoogleAdsClient
+          cfg = {
+            "developer_token": os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"],
+            "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_ADS_CLIENT_SECRET"],
+            "refresh_token": os.environ["GOOGLE_ADS_REFRESH_TOKEN"],
+            "login_customer_id": os.environ["GOOGLE_ADS_LOGIN_CUSTOMER_ID"],
+            "use_proto_plus": True,
+          }
+          cids = [c.strip() for c in os.environ.get("GOOGLE_ADS_CUSTOMER_IDS","").split(",") if c.strip()]
+          print("customers:", cids)
+          client = GoogleAdsClient.load_from_dict(cfg)
+          svc = client.get_service("GoogleAdsService")
+          for cid in cids:
+              print("="*20, cid)
+              try:
+                  lab = svc.search(customer_id=cid, query="SELECT label.id, label.name FROM label")
+                  labels = {r.label.resource_name: r.label.name for r in lab}
+                  print("labels:", labels)
+              except Exception as e:
+                  print("label query failed:", repr(e)); labels={}
+              q = ("SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, "
+                   "campaign_budget.resource_name, campaign_budget.name, campaign_budget.amount_micros, "
+                   "campaign_budget.explicitly_shared, campaign_budget.period, campaign.labels "
+                   "FROM campaign WHERE campaign.status = 'ENABLED'")
+              rows=[]
+              try:
+                  for r in svc.search(customer_id=cid, query=q):
+                      rows.append(r)
+              except Exception as e:
+                  print("campaign query failed:", repr(e)); continue
+              print("enabled campaigns:", len(rows))
+              tot=0; tot_all=0; seen={}
+              for r in rows:
+                  b = r.campaign_budget.amount_micros/1_000_000
+                  names=[labels.get(l,l.rsplit('/',1)[-1]) for l in r.campaign.labels]
+                  has = any('jelenew' in n.lower() for n in names)
+                  tot_all += b
+                  if has:
+                      print(f"  [JEL] {r.campaign.name} | {r.campaign.id} | budget={b:.2f} | shared={r.campaign_budget.explicitly_shared} | bres={r.campaign_budget.resource_name.rsplit('/',1)[-1]} | {r.campaign.advertising_channel_type.name}")
+                      key=r.campaign_budget.resource_name
+                      if key not in seen:
+                          seen[key]=b
+                          tot+=b
+                  else:
+                      pass
+              print(f"SUM_ALL_ENABLED={tot_all:.2f}")
+              print(f"SUM_JELENEW_DEDUP={tot:.2f}  campaigns_with_label={sum(1 for r in rows if any('jelenew' in labels.get(l,l).lower() for l in r.campaign.labels))}")
+          PY
