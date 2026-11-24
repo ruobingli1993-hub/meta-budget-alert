@@ -39,7 +39,7 @@ jobs:
               "code": CODE,
               "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
               "client_secret": os.environ["GOOGLE_ADS_CLIENT_SECRET"],
-              "redirect_uri": "https://chatgpt.com/connector_platform_oauth_redirect",
+              "redirect_uri": "http://localhost",
               "grant_type": "authorization_code",
           }, timeout=30)
           if r.status_code != 200:
