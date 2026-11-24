@@ -15,15 +15,14 @@ r = requests.post("https://oauth2.googleapis.com/token", data={
 }, timeout=30)
 if r.status_code != 200:
     print("EXCHANGE_FAIL", r.status_code, r.text[:300]); sys.exit(1)
-rt = r.json()["refresh_token"]
-print("::add-mask::" + rt)
+print("::add-mask::" + r.json()["refresh_token"])
 print("exchange ok")
 
 cfg = {
     "developer_token": os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"],
     "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
     "client_secret": os.environ["GOOGLE_ADS_CLIENT_SECRET"],
-    "refresh_token": rt,
+    "refresh_token": r.json()["refresh_token"],
     "login_customer_id": os.environ["GOOGLE_ADS_LOGIN_CUSTOMER_ID"],
     "use_proto_plus": True,
 }
@@ -35,34 +34,47 @@ q = ("SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_c
      "campaign_budget.resource_name, campaign_budget.amount_micros, campaign_budget.explicitly_shared, "
      "campaign.labels FROM campaign WHERE campaign.status = 'ENABLED'")
 
-agg = collections.defaultdict(lambda: [0, 0.0, set(), 0.0, 0.0, 0, 0])
-# value: [count, budget_sum, unique_budgets, sum_b, sum_b_troas, n_with_troas, n_without_troas]
-
+rows_all = []
 for cid in [c.strip() for c in os.environ["GOOGLE_ADS_CUSTOMER_IDS"].split(",") if c.strip()]:
-    labels = {}
-    for r0 in svc.search(customer_id=cid, query="SELECT label.id, label.name FROM label"):
-        labels[r0.label.resource_name] = r0.label.name
+    labels = {r0.label.resource_name: r0.label.name
+              for r0 in svc.search(customer_id=cid, query="SELECT label.id, label.name FROM label")}
     rows = list(svc.search(customer_id=cid, query=q))
     acct = NAMES.get(cid, cid)
     print(f"ACCT|{acct}|{cid}|enabled={len(rows)}")
     for rr in rows:
         b = rr.campaign_budget.amount_micros / 1_000_000
         labs = [labels.get(l, "") for l in rr.campaign.labels]
-        is_mai = any("mai" in x.lower() for x in labs)
-        grp = "mai" if is_mai else "非mai"
+        grp = "mai" if any("mai" in x.lower() for x in labs) else "非mai"
         ch = rr.campaign.advertising_channel_type.name
         try: tro = float(rr.campaign.maximize_conversion_value.target_roas)
         except Exception: tro = 0.0
-        for scope in [(acct, grp, ch), (acct, grp, "ALL"), (acct, "ALL", "ALL")]:
-            v = agg[scope]
-            v[0] += 1; v[1] += b; v[2].add(rr.campaign_budget.resource_name)
-            if tro > 0:
-                v[3] += b; v[4] += b * tro; v[5] += 1
-            else:
-                v[6] += 1
-        print(f"ROW|{acct}|{grp}|{ch}|{b:.2f}|{tro:.4f}|{rr.campaign.name}")
+        rows_all.append((acct, grp, ch, b, tro, rr.campaign_budget.resource_name, rr.campaign.name))
 
-print("== AGG ==")
-for k, v in sorted(agg.items()):
-    w = (v[4] / v[3]) if v[3] else 0.0
-    print(f"AGG|{k[0]}|{k[1]}|{k[2]}|{v[0]}|{v[1]:.2f}|{len(v[2])}|{w:.4f}|{v[5]}|{v[6]}|{v[3]:.2f}")
+# detail
+for a, g, c, b, t, res, n in rows_all:
+    print(f"ROW|{a}|{g}|{c}|{b:.2f}|{t:.4f}|{res}|{n}")
+
+def report(scope_key, title):
+    seen = {}
+    cnt = 0; sum_raw = 0.0
+    sb = 0.0; sbt = 0.0; nw = 0; nn = 0
+    for a, g, c, b, t, res, n in rows_all:
+        if scope_key(a, g, c):
+            cnt += 1; sum_raw += b
+            if res not in seen or seen[res] < b: seen[res] = b
+            if t > 0: sb += b; sbt += b * t; nw += 1
+            else: nn += 1
+    dedup = sum(seen.values())
+    w = (sbt / sb) if sb else 0.0
+    print(f"AGG|{title}|{cnt}|{dedup:.2f}|{sum_raw:.2f}|{len(seen)}|{w:.4f}|{nw}|{nn}")
+
+for acct in ["jelenew-Q&M", "Jelenew Cycling-1"]:
+    for grp in ["mai", "非mai"]:
+        for ch in ["SEARCH", "SHOPPING", "PERFORMANCE_MAX", "DEMAND_GEN", "DISPLAY", "VIDEO"]:
+            if any(x[0] == acct and x[1] == grp and x[2] == ch for x in rows_all):
+                report(lambda a, g, c, A=acct, G=grp, C=ch: a == A and g == G and c == C, f"{acct}|{grp}|{ch}")
+        report(lambda a, g, c, A=acct, G=grp: a == A and g == G, f"{acct}|{grp}|ALL")
+    report(lambda a, g, c, A=acct: a == A, f"{acct}|ALL|ALL")
+report(lambda a, g, c: True, "TOTAL|ALL|ALL")
+for grp in ["mai", "非mai"]:
+    report(lambda a, g, c, G=grp: g == G, f"TOTAL|{grp}|ALL")
