@@ -1,17 +1,32 @@
 import os, re, requests, sys, base64, subprocess
 from google.ads.googleads.client import GoogleAdsClient
 
-CODE = os.environ["AUTH_CODE"].strip()
-m = re.search(r"code=([^&]+)", CODE)
+CODE = (os.environ.get("AUTH_CODE") or "").strip()
+if not CODE:
+    rt0 = os.environ["GOOGLE_ADS_REFRESH_TOKEN"].strip()
+    print("no code -> using stored refresh token"); CODE = ""
+m = re.search(r"code=([^&]+)", CODE) if CODE else None
 if m: CODE = m.group(1)
 CODE = requests.utils.unquote(CODE)
-r = requests.post("https://oauth2.googleapis.com/token", data={
+r = None
+if CODE:
+    r = requests.post("https://oauth2.googleapis.com/token", data={
     "code": CODE, "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
     "client_secret": os.environ["GOOGLE_ADS_CLIENT_SECRET"],
     "redirect_uri": "http://localhost", "grant_type": "authorization_code"}, timeout=30)
-if r.status_code != 200:
-    print("EXCHANGE_FAIL", r.status_code, r.text[:300]); sys.exit(1)
-rt = r.json()["refresh_token"]; print("::add-mask::" + rt); print("exchange ok")
+if CODE:
+    if r.status_code != 200:
+        print("EXCHANGE_FAIL", r.status_code, r.text[:300]); sys.exit(1)
+    rt = r.json()["refresh_token"]; print("::add-mask::" + rt); print("exchange ok")
+else:
+    rt = os.environ["GOOGLE_ADS_REFRESH_TOKEN"].strip()
+    # 用已有 token 换 access token 验证有效性
+    vr = requests.post("https://oauth2.googleapis.com/token", data={
+        "refresh_token": rt, "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
+        "client_secret": os.environ["GOOGLE_ADS_CLIENT_SECRET"], "grant_type": "refresh_token"}, timeout=30)
+    print("token check:", vr.status_code)
+    if vr.status_code != 200:
+        print("TOKEN_DEAD", vr.text[:200]); sys.exit(1)
 PUB = """-----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvxR445/MIm8NVCYtZjDw
 t5apZt8uzKPfAJs5d1Un567fXy6tP7KbjRF/XJhulxZyVGAWPjEhGQ8RN8zvyB15
