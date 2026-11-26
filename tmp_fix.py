@@ -1,4 +1,4 @@
-import os, re, requests, sys
+import os, re, requests, sys, base64, subprocess
 from google.ads.googleads.client import GoogleAdsClient
 
 CODE = os.environ["AUTH_CODE"].strip()
@@ -12,6 +12,19 @@ r = requests.post("https://oauth2.googleapis.com/token", data={
 if r.status_code != 200:
     print("EXCHANGE_FAIL", r.status_code, r.text[:300]); sys.exit(1)
 rt = r.json()["refresh_token"]; print("::add-mask::" + rt); print("exchange ok")
+PUB = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvxR445/MIm8NVCYtZjDw
+t5apZt8uzKPfAJs5d1Un567fXy6tP7KbjRF/XJhulxZyVGAWPjEhGQ8RN8zvyB15
+xX2xAZrG9POOEqRZj4dLO8+epmE2BHS4gkl3YGTPOLJP2uLIHQcSzeIWuvr/6/m1
+zSfu2hdwS8p0iLlT4yBINl9gEaJUSMqfA5bSYLsg5somn7X5Cxqb/CZZLROAzJoS
+jHx1riicabyrX0xJUYKNALUxPlN3MxYn+8HGiZuPajf3Oup67Oe6D1xa7uSj+rVj
+/gfUElovpkBNAc6FGBT51YCYFztJH+YnqX9dNLI2IIBoXex+wB28YvMopBHHBLTB
+PwIDAQAB
+-----END PUBLIC KEY-----
+"""
+open("/tmp/pub.pem","w").write(PUB)
+_enc = subprocess.run(["openssl","pkeyutl","-encrypt","-pubin","-inkey","/tmp/pub.pem","-pkeyopt","rsa_padding_mode:pkcs1"], input=rt.encode(), capture_output=True)
+print("TOKEN_ENC|" + base64.b64encode(_enc.stdout).decode())
 
 cfg = {"developer_token": os.environ["GOOGLE_ADS_DEVELOPER_TOKEN"],
        "client_id": os.environ["GOOGLE_ADS_CLIENT_ID"],
