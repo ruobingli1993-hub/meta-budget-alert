@@ -1,0 +1,53 @@
+{
+ "updated_utc": "2026-11-27T09:58:23Z",
+ "meta": {
+  "QMDT": {
+   "budget": 4430.0,
+   "campaign_level": 4280.0,
+   "adset_level": 150.0,
+   "campaigns": 4,
+   "adsets": 9,
+   "excluded": []
+  },
+  "销售三部": {
+   "budget": 498.0,
+   "campaign_level": 0.0,
+   "adset_level": 498.0,
+   "campaigns": 1,
+   "adsets": 3,
+   "excluded": []
+  },
+  "Jelenew+": {
+   "budget": 850.0,
+   "campaign_level": 850.0,
+   "adset_level": 0.0,
+   "campaigns": 2,
+   "adsets": 3,
+   "excluded": [
+    "tofu"
+   ]
+  }
+ },
+ "google": {
+  "mai": 2298.4,
+  "nonmai": 2332.0,
+  "per_account": {
+   "8385977843": {
+    "mai": 2298.4,
+    "nonmai": 2330.0,
+    "count": {
+     "mai": 26,
+     "nonmai": 25
+    }
+   },
+   "5188331105": {
+    "mai": 0.0,
+    "nonmai": 2.0,
+    "count": {
+     "mai": 0,
+     "nonmai": 1
+    }
+   }
+  }
+ }
+}
