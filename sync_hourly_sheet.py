@@ -10,8 +10,14 @@ WFS={"hourly.json":"hourly-funnel.yml","google_hourly.json":"google-hourly.yml",
 TOKF=os.path.expanduser("~/.cache/gbud/.ghtok")
 TOK=open(TOKF).read().strip() if os.path.exists(TOKF) else ""
 def _dt(s): return datetime.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ")
+def _api_json(name):
+    u=f"https://api.github.com/repos/ruobingli1993-hub/meta-budget-alert/contents/{name}?ref=main"
+    h={"Accept":"application/vnd.github.raw"}
+    if TOK: h["Authorization"]=f"Bearer {TOK}"
+    req=urllib.request.Request(u,headers=h)
+    return json.loads(urllib.request.urlopen(req,timeout=30).read().decode())
 def _peek(n):
-    try: return _dt(json.load(urllib.request.urlopen(f"{RAW}{n}?ts={int(time.time())}",timeout=20))["updated_utc"])
+    try: return _dt(_api_json(n)["updated_utc"])
     except Exception: return None
 try:
     if TOK:
@@ -30,7 +36,7 @@ try:
 except Exception as e:
     print("PREFETCH| skip", type(e).__name__, e)
 
-d=json.load(urllib.request.urlopen(f"{SRC}?ts={int(time.time())}",timeout=30))
+d=_api_json("hourly.json")
 cols=d["columns"]; data=d["data"]
 assert len(cols)==46, f"columns {len(cols)} != 46"
 
@@ -69,7 +75,8 @@ print("SYNC|updated_utc=",d["updated_utc"],"|rows",len(data),"|cols",len(cols),
 # ---------- 子表三：BF by hour budget（分小时实时日预算巡航，逐小时留痕） ----------
 BSRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/bf_budget.json"
 def _get(u):
-    return json.load(urllib.request.urlopen(f"{u}?ts={int(time.time())}",timeout=30))
+    try: return _api_json(u.split("/main/")[1].split("?")[0])
+    except Exception: return json.load(urllib.request.urlopen(f"{u}?ts={int(time.time())}",timeout=30))
 
 try:
     b=_get(BSRC); bud_utc=b.get("updated_utc")
