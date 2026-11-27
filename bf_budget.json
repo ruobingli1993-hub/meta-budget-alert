@@ -1,5 +1,5 @@
 {
- "updated_utc": "2026-11-27T13:24:23Z",
+ "updated_utc": "2026-11-27T14:21:01Z",
  "meta": {
   "QMDT": {
    "budget": 5270.0,
@@ -18,8 +18,8 @@
    "excluded": []
   },
   "Jelenew+": {
-   "budget": 850.0,
-   "campaign_level": 850.0,
+   "budget": 960.0,
+   "campaign_level": 960.0,
    "adset_level": 0.0,
    "campaigns": 2,
    "adsets": 3,
