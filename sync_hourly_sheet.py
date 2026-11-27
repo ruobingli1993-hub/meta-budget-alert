@@ -13,7 +13,13 @@ dtypes={"小时":"object"}; fmts={}
 for c in rate_cols[1:]: dtypes[c]="float64"; fmts[c]="0.00%"
 
 # 子表二：小时消耗ROI（A:S，19 列：小时 + 每账户 消耗3 / ROI3）
-roi_cols=["小时"]+cols[28:46]; roi_data=[[r[0]]+r[28:46] for r in data]
+# 子表二：小时消耗ROI（A:M，13 列：小时 + 每账户 消耗今天/昨天 + ROI今天/昨天）
+offs={"QMDT":28,"销售三部":34,"Jelenew+":40}
+roi_cols=["小时"]; roi_idx=[0]
+for nm,off in offs.items():
+    roi_cols += [f"{nm} 消耗 今天", f"{nm} 消耗 昨天", f"{nm} ROI 今天", f"{nm} ROI 昨天"]
+    roi_idx += [off, off+1, off+3, off+4]
+roi_data=[[r[i] for i in roi_idx] for r in data]
 rdtypes={"小时":"object"}; rfmts={}
 for c in roi_cols[1:]:
     rdtypes[c]="float64"; rfmts[c]="$#,##0.00" if "消耗" in c else "0.00"
