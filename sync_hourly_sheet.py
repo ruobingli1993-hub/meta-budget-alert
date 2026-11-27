@@ -78,44 +78,55 @@ except Exception as e:
 
 PHX=ZoneInfo("America/Phoenix")
 cur_h=datetime.datetime.now(PHX).hour
-bh=cur_h+1  # BF 表标签 1..24 = 当地第 1..24 个小时，当前正在进行的是第 bh 个小时
 
 if b:
     import csv, io
     q=float(b["meta"]["QMDT"]["budget"]); s3=float(b["meta"]["销售三部"]["budget"]); jl=float(b["meta"]["Jelenew+"]["budget"])
     mai=float(b["google"]["mai"]); nm=float(b["google"]["nonmai"])
-    # 读现有格子，保留已跑过的历史值
     rr=subprocess.run([LARK,"sheets","+csv-get","--spreadsheet-token",TOKEN_SHEET,"--sheet-name",
-                       "BF by hour budget","--range","F3:L26","--format","json"],capture_output=True,text=True)
-    old=[[""]*7 for _ in range(24)]
+                       "BF by hour budget","--range","A3:L26","--format","json"],capture_output=True,text=True)
+    old=[[""]*12 for _ in range(24)]
     try:
         rows=list(csv.reader(io.StringIO(json.loads(rr.stdout)["data"]["csv"])))
-        rows=rows+[[""]*7]*(24-len(rows))
+        rows=rows+[[""]*12]*(24-len(rows))
         for i,r in enumerate(rows[:24]):
-            old[i]=(list(r)+[""]*7)[:7]
+            old[i]=(list(r)+[""]*12)[:12]
     except Exception:
         pass
-    def filled(r,idx):
-        return any((r[i] or "").strip() not in ("","0","0.00","0.0") for i in idx)
+    # 按 A 列真实标签定位当前小时所在行（标签可能是 0–23，也可能是 1–24）
+    labels=[]
+    for i in range(24):
+        try: labels.append(int(float((old[i][0] or "").strip())))
+        except Exception: labels.append(None)
+    if cur_h in labels:
+        idx=labels.index(cur_h)
+    elif cur_h+1 in labels:
+        idx=labels.index(cur_h+1)
+    else:
+        idx=cur_h if (labels and labels[0]==0) else cur_h-1
+    idx=max(0,min(23,idx))
+    def filled(r,ix):
+        return any((r[i] or "").strip() not in ("","0","0.00","0.0") for i in ix)
     fgh=[]; kl=[]
-    for h in range(24):
+    for i in range(24):
         cur=[q,s3,jl]; gv=[mai,nm]
-        if h==bh:
+        if i==idx:
             fgh.append([{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
             kl.append([{"value":gv[0]},{"value":gv[1]}])
-        elif h>bh:
+        elif i>idx:
             fgh.append([{}]*3); kl.append([{}]*2)
-        else:  # 已过小时：有值就保留，空着才补当前预算
-            fgh.append([{}]*3 if filled(old[h],[0,1,2]) else
+        else:
+            fgh.append([{}]*3 if filled(old[i],[5,6,7]) else
                        [{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
-            kl.append([{}]*2 if filled(old[h],[5,6]) else [{"value":gv[0]},{"value":gv[1]}])
-    bcw=[[{"formula":f'=IF(COUNT(F{3+h}:H{3+h})=0,"",SUM(F{3+h}:H{3+h}))'},
-          {"formula":f'=IF(COUNT(K{3+h}:L{3+h})=0,"",SUM(K{3+h}:L{3+h}))'}] for h in range(24)]
+            kl.append([{}]*2 if filled(old[i],[10,11]) else [{"value":gv[0]},{"value":gv[1]}])
+    bcw=[[{"formula":f'=IF(COUNT(F{3+i}:H{3+i})=0,"",SUM(F{3+i}:H{3+i}))'},
+          {"formula":f'=IF(COUNT(K{3+i}:L{3+i})=0,"",SUM(K{3+i}:L{3+i}))'}] for i in range(24)]
+    lab=labels[idx] if labels[idx] is not None else cur_h
     notes=[
      "每格 = 该小时在平台上的实时日预算（同一份日预算，未改动则各小时相同；一旦改预算，改动后读到的那小时起写入新值，已跑过的小时保持原值留痕）",
-     f"账户时区 America/Phoenix（UTC-7）；本表第 N 行 = 当地第 N 个小时（N=1 即 00:00–01:00），与小时转化率/小时消耗ROI 的 \"00–23\" 行错一位（本表第 N 行 = 那两表的 (N-1) 行）；本次写入第 {bh} 行（当地 {cur_h:02d}:00–{bh:02d}:00，正在进行中），之后的格子留空待到点",
+     f"账户时区 America/Phoenix（UTC-7），小时标签与 小时转化率/小时消耗ROI 的 00–23 一一对应；本次写入标签 {lab} 的那一行（当地 {cur_h:02d}:00–{cur_h+1:02d}:00，正在进行中），之后的格子留空待到点",
      f"数据源：bf_budget.json（更新于 {bud_utc}）——Meta 为 campaign+adset 日预算合计（Jelenew+ 已剔除 tofu），Google 为 campaign_budget 去重后按 label 拆 mai / 非mai",
-     "B、C 列 = 平台合计，公式 =IF(COUNT(...)=0,\"\",SUM(...))；金额 USD",
+     'B、C 列 = 平台合计，公式 =IF(COUNT(...)=0,"",SUM(...))；金额 USD',
     ]
     bw=[{"sheet_name":"BF by hour budget","range":"B3:C26","cells":bcw},
         {"sheet_name":"BF by hour budget","range":"F3:H26","cells":fgh},
@@ -127,12 +138,12 @@ if b:
                        "--writes",f"@{p2}","--format","json"],capture_output=True,text=True)
     ok='"succeeded": 4' in r2.stdout
     print("BF|","ok" if ok else r2.stdout[:300])
-    if bh < 24:  # 未到的小时一律清空（null/"" 写不掉旧值，改用 cells-clear）
-        for rng in (f"F{bh+3}:H26", f"K{bh+3}:L26"):
+    if idx < 23:
+        for rng in (f"F{idx+4}:H26", f"K{idx+4}:L26"):
             subprocess.run([LARK,"sheets","+cells-clear","--spreadsheet-token",TOKEN_SHEET,
                             "--sheet-name","BF by hour budget","--range",rng,"--yes"],
                            capture_output=True,text=True)
     os.unlink(p2)
-    print(f"BFNOW|phx_h={cur_h} |row={bh+2} |QMDT {q} 销售 {s3} Jelenew {jl} |mai {mai} nonmai {nm} |budget_utc {bud_utc}")
+    print(f"BFNOW|phx_h={cur_h} |row={idx+3} |label={lab} |QMDT {q} 销售 {s3} Jelenew {jl} |mai {mai} nonmai {nm} |budget_utc {bud_utc}")
 else:
     print("BF| skipped (no bf_budget.json)")
