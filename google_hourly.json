@@ -1,0 +1,182 @@
+{
+ "updated_utc": "2026-11-27T09:54:14Z",
+ "accounts": {
+  "8385977843": {
+   "name": "jelenew-Q&M",
+   "tz": "America/Phoenix",
+   "date": "2026-11-27"
+  },
+  "5188331105": {
+   "name": "Jelenew Cycling-1",
+   "tz": "America/Phoenix",
+   "date": "2026-11-27"
+  }
+ },
+ "rows": [
+  {
+   "hour": 0,
+   "mai": 102.31,
+   "nonmai": 104.34
+  },
+  {
+   "hour": 1,
+   "mai": 78.25,
+   "nonmai": 100.31
+  },
+  {
+   "hour": 2,
+   "mai": 30.36,
+   "nonmai": 59.42
+  },
+  {
+   "hour": 3,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 4,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 5,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 6,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 7,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 8,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 9,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 10,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 11,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 12,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 13,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 14,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 15,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 16,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 17,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 18,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 19,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 20,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 21,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 22,
+   "mai": 0.0,
+   "nonmai": 0.0
+  },
+  {
+   "hour": 23,
+   "mai": 0.0,
+   "nonmai": 0.0
+  }
+ ],
+ "errors": [],
+ "per_account": {
+  "8385977843": {
+   "name": "jelenew-Q&M",
+   "tz": "America/Phoenix",
+   "date": "2026-11-27",
+   "hours": {
+    "0": {
+     "mai": 102.31,
+     "nonmai": 104.14
+    },
+    "1": {
+     "mai": 78.25,
+     "nonmai": 100.01
+    },
+    "2": {
+     "mai": 30.36,
+     "nonmai": 59.33
+    }
+   }
+  },
+  "5188331105": {
+   "name": "Jelenew Cycling-1",
+   "tz": "America/Phoenix",
+   "date": "2026-11-27",
+   "hours": {
+    "0": {
+     "mai": 0.0,
+     "nonmai": 0.2
+    },
+    "1": {
+     "mai": 0.0,
+     "nonmai": 0.31
+    },
+    "2": {
+     "mai": 0.0,
+     "nonmai": 0.09
+    }
+   }
+  }
+ },
+ "totals": {
+  "mai": 210.92,
+  "nonmai": 264.08
+ }
+}
