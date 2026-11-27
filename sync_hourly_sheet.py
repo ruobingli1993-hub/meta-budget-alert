@@ -4,6 +4,32 @@ SRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/
 TOKEN_SHEET="Eu5Zsq9Avhun4ltAaWKcJ0gvneh"
 LARK=shutil.which("lark-cli") or "/home/user/vm/resource-loader/bin/lark-cli"
 
+# ---------- 上游保鲜：GitHub schedule 在本仓库不触发，改为本机按需 dispatch ----------
+RAW="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/"
+WFS={"hourly.json":"hourly-funnel.yml","google_hourly.json":"google-hourly.yml","bf_budget.json":"bf-budget.yml"}
+TOKF=os.path.expanduser("~/.cache/gbud/.ghtok")
+TOK=open(TOKF).read().strip() if os.path.exists(TOKF) else ""
+def _dt(s): return datetime.datetime.strptime(s,"%Y-%m-%dT%H:%M:%SZ")
+def _peek(n):
+    try: return _dt(json.load(urllib.request.urlopen(f"{RAW}{n}?ts={int(time.time())}",timeout=20))["updated_utc"])
+    except Exception: return None
+try:
+    if TOK:
+        now=datetime.datetime.utcnow(); need=[n for n in WFS if (lambda u:(u is None or (now-u).total_seconds()>2700))(_peek(n))]
+        if need:
+            for n in need:
+                req=urllib.request.Request(
+                    f"https://api.github.com/repos/ruobingli1993-hub/meta-budget-alert/actions/workflows/{WFS[n]}/dispatches",
+                    data=json.dumps({"ref":"main"}).encode(), method="POST",
+                    headers={"Authorization":f"Bearer {TOK}","Accept":"application/vnd.github+json","Content-Type":"application/json"})
+                urllib.request.urlopen(req,timeout=20).read()
+            print("PREFETCH| dispatched", need)
+            for _ in range(12):
+                time.sleep(15)
+                if all((lambda u: u is not None and (datetime.datetime.utcnow()-u).total_seconds()<300)(_peek(n)) for n in need): break
+except Exception as e:
+    print("PREFETCH| skip", type(e).__name__, e)
+
 d=json.load(urllib.request.urlopen(f"{SRC}?ts={int(time.time())}",timeout=30))
 cols=d["columns"]; data=d["data"]
 assert len(cols)==46, f"columns {len(cols)} != 46"
@@ -40,48 +66,31 @@ os.unlink(path)
 print("SYNC|updated_utc=",d["updated_utc"],"|rows",len(data),"|cols",len(cols),
       "|excluded=",d.get("excluded",{}).get("Jelenew+"))
 
-# ---------- 子表三：BF by hour budget（日预算拆到小时，每小时刷新） ----------
+# ---------- 子表三：BF by hour budget（分小时实时日预算巡航） ----------
 BSRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/bf_budget.json"
-GSRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/google_hourly.json"
 def _get(u):
     return json.load(urllib.request.urlopen(f"{u}?ts={int(time.time())}",timeout=30))
-def alloc(total, series):
-    s=sum(series) or 1.0
-    vals=[round(total*(v/s),2) for v in series]
-    d=round(total-sum(vals),2)
-    if d: 
-        j=max(range(len(vals)),key=lambda i: vals[i]); vals[j]=round(vals[j]+d,2)
-    return vals
 
 try:
     b=_get(BSRC); bud_utc=b.get("updated_utc")
 except Exception as e:
     b=None; bud_utc=f"(bf_budget.json 不可用: {e})"
-try:
-    g=_get(GSRC); g_yd={int(r["hour"]):(r.get("mai") or 0.0,r.get("nonmai") or 0.0) for r in g.get("rows_yday",[])}
-except Exception as e:
-    g_yd={}
+
+PHX=ZoneInfo("America/Phoenix")
+cur_h=datetime.datetime.now(PHX).hour
 
 if b:
-    mo={"QMDT":29,"销售三部":35,"Jelenew+":41}
-    q_vals=[]
-    mv={}
-    for nm,ci in mo.items():
-        ys=[(data[h][ci] or 0.0) for h in range(24)]
-        tot=float(b["meta"][nm]["budget"])
-        mv[nm]=alloc(tot,ys)
-    mai_s=[g_yd.get(h,(0.0,0.0))[0] for h in range(24)] or [1.0]*24
-    nm_s=[g_yd.get(h,(0.0,0.0))[1] for h in range(24)] or [1.0]*24
-    mk=alloc(float(b["google"]["mai"]),mai_s)
-    nk=alloc(float(b["google"]["nonmai"]),nm_s)
-    bcw=[[{"formula":f'=SUM(F{3+h}:H{3+h})'},{"formula":f'=SUM(K{3+h}:L{3+h})'}] for h in range(24)]
-    fgh=[[{"value":mv["QMDT"][h]},{"value":mv["销售三部"][h]},{"value":mv["Jelenew+"][h]}] for h in range(24)]
-    kl=[[{"value":mk[h]},{"value":nk[h]}] for h in range(24)]
+    q=float(b["meta"]["QMDT"]["budget"]); s3=float(b["meta"]["销售三部"]["budget"]); jl=float(b["meta"]["Jelenew+"]["budget"])
+    mai=float(b["google"]["mai"]); nm=float(b["google"]["nonmai"])
+    bcw=[[{"formula":f'=IF(COUNT(F{3+h}:H{3+h})=0,"",SUM(F{3+h}:H{3+h}))'},
+          {"formula":f'=IF(COUNT(K{3+h}:L{3+h})=0,"",SUM(K{3+h}:L{3+h}))'}] for h in range(24)]
+    fgh=[[{"value":q},{"value":s3},{"value":jl}] if h<=cur_h else [{"value":None}]*3 for h in range(24)]
+    kl=[[{"value":mai},{"value":nm}] if h<=cur_h else [{"value":None}]*2 for h in range(24)]
     notes=[
-     "每小时预算 = 当日 daily budget 按昨天同小时实际消耗占比拆到 24 小时；账户时区 America/Phoenix（UTC-7），1 = 当地 00:00–01:00",
-     f"预算总额每小时从平台读取（bf_budget.json，更新于 {bud_utc}）：Meta 账户 campaign+adset 日预算合计，Google campaign_budget 去重后按 mai / 非mai 汇总",
-     "昨天小时占比：Meta 取 hourly.json 的昨天各账户分小时消耗；Google 取 google_hourly.json 的昨天分小时消耗（mai、非mai 各自一条曲线）",
-     "B、C 列 = 平台合计，公式 =SUM(F:H) / =SUM(K:L)；金额 USD",
+     "每格 = 该小时在平台上的实时日预算（同一份日预算，未改动则各小时相同；一旦改预算，从改动后读到的那小时起数值随之变化）",
+     f"账户时区 America/Phoenix（UTC-7），1 = 当地 00:00–01:00；本地当前凤凰城小时 {cur_h:02d} 点，之后的格子留空待到点",
+     f"数据源：bf_budget.json（更新于 {bud_utc}）——Meta 为 campaign+adset 日预算合计（Jelenew+ 已剔除 tofu），Google 为 campaign_budget 去重后按 label 拆 mai / 非mai",
+     "B、C 列 = 平台合计，公式 =IF(COUNT(...)=0,\"\",SUM(...))；金额 USD",
     ]
     bw=[{"sheet_name":"BF by hour budget","range":"B3:C26","cells":bcw},
         {"sheet_name":"BF by hour budget","range":"F3:H26","cells":fgh},
@@ -91,9 +100,9 @@ if b:
         json.dump(bw,f,ensure_ascii=False); p2=f.name
     r2=subprocess.run([LARK,"sheets","+cells-set","--spreadsheet-token",TOKEN_SHEET,
                        "--writes",f"@{p2}","--format","json"],capture_output=True,text=True)
-    ok = '"succeeded": 4' in r2.stdout
-    print("BF|", "ok" if ok else r2.stdout[:300])
+    ok='"succeeded": 4' in r2.stdout
+    print("BF|","ok" if ok else r2.stdout[:300])
     os.unlink(p2)
-    print("BFSUM|meta", round(sum(sum(mv[k]) for k in mv),2), "google", round(sum(mk)+sum(nk),2), "|budget_utc", bud_utc)
+    print(f"BFNOW|phx_h={cur_h} |QMDT {q} 销售 {s3} Jelenew {jl} |mai {mai} nonmai {nm} |budget_utc {bud_utc}")
 else:
     print("BF| skipped (no bf_budget.json)")
