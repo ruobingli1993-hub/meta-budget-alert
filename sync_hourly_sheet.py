@@ -103,7 +103,7 @@ if b:
             fgh.append([{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
             kl.append([{"value":gv[0]},{"value":gv[1]}])
         elif h>cur_h:
-            fgh.append([{"value":None}]*3); kl.append([{"value":None}]*2)
+            fgh.append([{}]*3); kl.append([{}]*2)
         else:  # 已过小时：有值就保留，空着才补当前预算
             fgh.append([{}]*3 if filled(old[h],[0,1,2]) else
                        [{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
@@ -126,6 +126,11 @@ if b:
                        "--writes",f"@{p2}","--format","json"],capture_output=True,text=True)
     ok='"succeeded": 4' in r2.stdout
     print("BF|","ok" if ok else r2.stdout[:300])
+    if cur_h < 23:  # 未到的小时一律清空（null/"" 写不掉旧值，改用 cells-clear）
+        for rng in (f"F{cur_h+3}:H26", f"K{cur_h+3}:L26"):
+            subprocess.run([LARK,"sheets","+cells-clear","--spreadsheet-token",TOKEN_SHEET,
+                            "--sheet-name","BF by hour budget","--range",rng,"--yes"],
+                           capture_output=True,text=True)
     os.unlink(p2)
     print(f"BFNOW|phx_h={cur_h} |QMDT {q} 销售 {s3} Jelenew {jl} |mai {mai} nonmai {nm} |budget_utc {bud_utc}")
 else:
