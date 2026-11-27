@@ -34,6 +34,7 @@ res = {"updated_utc": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
        "accounts": {}, "rows": [], "errors": []}
 
 agg = collections.defaultdict(lambda: {"mai": 0.0, "nonmai": 0.0})   # hour -> sums
+aggy = collections.defaultdict(lambda: {"mai": 0.0, "nonmai": 0.0})
 per_account = {}
 
 for cid in CIDS:
@@ -54,29 +55,40 @@ for cid in CIDS:
             tags = [labels.get(ref.split("/")[-1], "") for ref in row.campaign.labels]
             camp_mai[str(row.campaign.id)] = ("mai" in tags)
 
-        hours = collections.defaultdict(lambda: {"mai": 0.0, "nonmai": 0.0})
-        q = f"""SELECT campaign.id, segments.hour, metrics.cost_micros
-                FROM campaign
-                WHERE segments.date = '{day}' AND metrics.cost_micros > 0
-                ORDER BY segments.hour"""
-        for batch in svc.search_stream(customer_id=cid, query=q):
-            for row in batch.results:
-                h = int(row.segments.hour)
-                cost = micros(row.metrics.cost_micros)
-                key = "mai" if camp_mai.get(str(row.campaign.id), False) else "nonmai"
-                hours[h][key] += cost
+        def pull(dstr):
+            hours = collections.defaultdict(lambda: {"mai": 0.0, "nonmai": 0.0})
+            q = f"""SELECT campaign.id, segments.hour, metrics.cost_micros
+                    FROM campaign
+                    WHERE segments.date = '{dstr}' AND metrics.cost_micros > 0
+                    ORDER BY segments.hour"""
+            for batch in svc.search_stream(customer_id=cid, query=q):
+                for row in batch.results:
+                    h = int(row.segments.hour)
+                    cost = micros(row.metrics.cost_micros)
+                    key = "mai" if camp_mai.get(str(row.campaign.id), False) else "nonmai"
+                    hours[h][key] += cost
+            return hours
+        prev_day = (datetime.datetime.now(tzinfo).date() - datetime.timedelta(days=1)).isoformat()
+        hours = pull(day); hours_y = pull(prev_day)
         per_account[cid] = {"name": name, "tz": tz, "date": day,
                             "hours": {str(h): {"mai": round(v["mai"], 2), "nonmai": round(v["nonmai"], 2)}
-                                      for h, v in sorted(hours.items())}}
+                                      for h, v in sorted(hours.items())},
+                            "yday": prev_day,
+                            "hours_yday": {str(h): {"mai": round(v["mai"], 2), "nonmai": round(v["nonmai"], 2)}
+                                           for h, v in sorted(hours_y.items())}}
         res["accounts"][cid] = {"name": name, "tz": tz, "date": day}
         for h, v in hours.items():
             agg[h]["mai"] += v["mai"]; agg[h]["nonmai"] += v["nonmai"]
+        for h, v in hours_y.items():
+            aggy[h]["mai"] += v["mai"]; aggy[h]["nonmai"] += v["nonmai"]
     except Exception as exc:
         res["errors"].append({cid: f"{type(exc).__name__}: {exc}"})
 
 res["per_account"] = per_account
 res["rows"] = [{"hour": h, "mai": round(agg[h]["mai"], 2), "nonmai": round(agg[h]["nonmai"], 2)}
                for h in range(24)]
+res["rows_yday"] = [{"hour": h, "mai": round(aggy[h]["mai"], 2), "nonmai": round(aggy[h]["nonmai"], 2)}
+                    for h in range(24)]
 res["totals"] = {"mai": round(sum(v["mai"] for v in agg.values()), 2),
                  "nonmai": round(sum(v["nonmai"] for v in agg.values()), 2)}
 
