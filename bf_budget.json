@@ -1,5 +1,5 @@
 {
- "updated_utc": "2026-11-27T15:21:49Z",
+ "updated_utc": "2026-11-27T16:20:57Z",
  "meta": {
   "QMDT": {
    "budget": 5770.0,
@@ -29,14 +29,14 @@
   }
  },
  "google": {
-  "mai": 2339.55,
-  "nonmai": 2376.0,
+  "mai": 2257.47,
+  "nonmai": 2426.0,
   "per_account": {
    "8385977843": {
-    "mai": 2339.55,
-    "nonmai": 2374.0,
+    "mai": 2257.47,
+    "nonmai": 2424.0,
     "count": {
-     "mai": 26,
+     "mai": 25,
      "nonmai": 25
     }
    },
