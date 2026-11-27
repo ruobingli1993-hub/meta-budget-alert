@@ -121,9 +121,16 @@ raw=json.dumps(payload,ensure_ascii=False)
 print("ROWS|",len(data),"|COLS|",len(cols),"|BYTES|",len(raw))
 url=f"https://api.github.com/repos/{REPO}/contents/hourly.json"
 hdr={"Authorization":f"Bearer {GH}","Content-Type":"application/json"}
-sha=requests.get(url,headers=hdr,timeout=30).json().get("sha")
-body={"message":f"hourly funnel {payload['updated_utc']}","content":base64.b64encode(raw.encode()).decode(),"branch":"main"}
-if sha: body["sha"]=sha
-r=requests.put(url,headers=hdr,json=body,timeout=60)
-print("PUBLISH|",r.status_code)
+r=None
+for attempt in range(5):
+    sha=requests.get(url,headers=hdr,timeout=30).json().get("sha")
+    body={"message":f"hourly funnel {payload['updated_utc']}","content":base64.b64encode(raw.encode()).decode(),"branch":"main"}
+    if sha: body["sha"]=sha
+    r=requests.put(url,headers=hdr,json=body,timeout=60)
+    print("PUBLISH|",r.status_code,"|try",attempt+1)
+    if r.status_code in (200,201):
+        break
+    import time as _t; _t.sleep(3)
+if r is not None and r.status_code not in (200,201):
+    raise SystemExit(f"publish failed: {r.status_code} {r.text[:200]}")
 print("SAMPLE|",json.dumps(data[:2],ensure_ascii=False)[:300])
