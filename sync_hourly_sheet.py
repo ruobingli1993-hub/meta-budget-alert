@@ -66,7 +66,7 @@ os.unlink(path)
 print("SYNC|updated_utc=",d["updated_utc"],"|rows",len(data),"|cols",len(cols),
       "|excluded=",d.get("excluded",{}).get("Jelenew+"))
 
-# ---------- 子表三：BF by hour budget（分小时实时日预算巡航） ----------
+# ---------- 子表三：BF by hour budget（分小时实时日预算巡航，逐小时留痕） ----------
 BSRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/bf_budget.json"
 def _get(u):
     return json.load(urllib.request.urlopen(f"{u}?ts={int(time.time())}",timeout=30))
@@ -80,15 +80,39 @@ PHX=ZoneInfo("America/Phoenix")
 cur_h=datetime.datetime.now(PHX).hour
 
 if b:
+    import csv, io
     q=float(b["meta"]["QMDT"]["budget"]); s3=float(b["meta"]["销售三部"]["budget"]); jl=float(b["meta"]["Jelenew+"]["budget"])
     mai=float(b["google"]["mai"]); nm=float(b["google"]["nonmai"])
+    # 读现有格子，保留已跑过的历史值
+    rr=subprocess.run([LARK,"sheets","+csv-get","--spreadsheet-token",TOKEN_SHEET,"--sheet-name",
+                       "BF by hour budget","--range","F3:L26","--format","json"],capture_output=True,text=True)
+    old=[[""]*7 for _ in range(24)]
+    try:
+        rows=list(csv.reader(io.StringIO(json.loads(rr.stdout)["data"]["csv"])))
+        rows=rows+[[""]*7]*(24-len(rows))
+        for i,r in enumerate(rows[:24]):
+            old[i]=(list(r)+[""]*7)[:7]
+    except Exception:
+        pass
+    def filled(r,idx):
+        return any((r[i] or "").strip() not in ("","0","0.00","0.0") for i in idx)
+    fgh=[]; kl=[]
+    for h in range(24):
+        cur=[q,s3,jl]; gv=[mai,nm]
+        if h==cur_h:
+            fgh.append([{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
+            kl.append([{"value":gv[0]},{"value":gv[1]}])
+        elif h>cur_h:
+            fgh.append([{"value":None}]*3); kl.append([{"value":None}]*2)
+        else:  # 已过小时：有值就保留，空着才补当前预算
+            fgh.append([{}]*3 if filled(old[h],[0,1,2]) else
+                       [{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
+            kl.append([{}]*2 if filled(old[h],[5,6]) else [{"value":gv[0]},{"value":gv[1]}])
     bcw=[[{"formula":f'=IF(COUNT(F{3+h}:H{3+h})=0,"",SUM(F{3+h}:H{3+h}))'},
           {"formula":f'=IF(COUNT(K{3+h}:L{3+h})=0,"",SUM(K{3+h}:L{3+h}))'}] for h in range(24)]
-    fgh=[[{"value":q},{"value":s3},{"value":jl}] if h<=cur_h else [{"value":None}]*3 for h in range(24)]
-    kl=[[{"value":mai},{"value":nm}] if h<=cur_h else [{"value":None}]*2 for h in range(24)]
     notes=[
-     "每格 = 该小时在平台上的实时日预算（同一份日预算，未改动则各小时相同；一旦改预算，从改动后读到的那小时起数值随之变化）",
-     f"账户时区 America/Phoenix（UTC-7），1 = 当地 00:00–01:00；本地当前凤凰城小时 {cur_h:02d} 点，之后的格子留空待到点",
+     "每格 = 该小时在平台上的实时日预算（同一份日预算，未改动则各小时相同；一旦改预算，改动后读到的那小时起写入新值，已跑过的小时保持原值留痕）",
+     f"账户时区 America/Phoenix（UTC-7），1 = 当地 00:00–01:00；本次写入凤凰城 {cur_h:02d} 点这一行，之后的格子留空待到点",
      f"数据源：bf_budget.json（更新于 {bud_utc}）——Meta 为 campaign+adset 日预算合计（Jelenew+ 已剔除 tofu），Google 为 campaign_budget 去重后按 label 拆 mai / 非mai",
      "B、C 列 = 平台合计，公式 =IF(COUNT(...)=0,\"\",SUM(...))；金额 USD",
     ]
