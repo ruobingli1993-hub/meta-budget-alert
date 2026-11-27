@@ -1,4 +1,4 @@
-import json, urllib.request, subprocess, tempfile, os, time, shutil, datetime
+import json, urllib.request, subprocess, tempfile, os, time, shutil, datetime, csv
 from zoneinfo import ZoneInfo
 SRC="https://raw.githubusercontent.com/ruobingli1993-hub/meta-budget-alert/main/hourly.json"
 TOKEN_SHEET="Eu5Zsq9Avhun4ltAaWKcJ0gvneh"
@@ -45,30 +45,61 @@ rate_cols=cols[:28]; rate_data=[r[:28] for r in data]
 dtypes={"小时":"object"}; fmts={}
 for c in rate_cols[1:]: dtypes[c]="float64"; fmts[c]="0.00%"
 
-# 子表二：小时消耗ROI（A:S，19 列：小时 + 每账户 消耗3 / ROI3）
-# 子表二：小时消耗ROI（A:M，13 列：小时 + 每账户 消耗今天/昨天 + ROI今天/昨天）
+# 子表二：小时消耗ROI —— 表头感知：用户插入了辅助列（消耗/ROI 环比 %），按表头名定位列，绝不按列序硬写
 offs={"QMDT":28,"销售三部":34,"Jelenew+":40}
-roi_cols=["小时"]; roi_idx=[0]
+val={}
 for nm,off in offs.items():
-    roi_cols += [f"{nm} 消耗 今天", f"{nm} 消耗 昨天", f"{nm} ROI 今天", f"{nm} ROI 昨天"]
-    roi_idx += [off, off+1, off+3, off+4]
-roi_data=[[r[i] for i in roi_idx] for r in data]
-rdtypes={"小时":"object"}; rfmts={}
-for c in roi_cols[1:]:
-    rdtypes[c]="float64"; rfmts[c]="$#,##0.00" if "消耗" in c else "0.00"
-
+    val[(nm,"消耗 今天")]=[r[off] for r in data]
+    val[(nm,"消耗 昨天")]=[r[off+1] for r in data]
+    val[(nm,"ROI 今天")]=[r[off+3] for r in data]
+    val[(nm,"ROI 昨天")]=[r[off+4] for r in data]
+def _letter(i):
+    s="";i+=1
+    while i: i,rem=divmod(i-1,26); s=chr(65+rem)+s
+    return s
+def _hdrrow(sheet,rng="A1:Z1"):
+    r=subprocess.run([LARK,"sheets","+csv-get","--spreadsheet-token",TOKEN_SHEET,"--sheet-name",sheet,"--range",rng,"--format","json"],capture_output=True,text=True)
+    line=json.loads(r.stdout)["data"]["csv"].splitlines()[0]
+    return [h.strip() for h in next(csv.reader([line]))]
+hdr=_hdrrow("小时消耗ROI")
+colmap={}
+for i,h in enumerate(hdr):
+    if h: colmap.setdefault(h, _letter(i))
+# 兼容旧表头（无账户名前缀）时的兜底列序
+fallback={"QMDT":["B","C","D","E"],"销售三部":["F","G","H","I"],"Jelenew+":["J","K","L","M"]}
+items=[]; missing=[]
+for nm in ["QMDT","销售三部","Jelenew+"]:
+    for k,f in [("消耗 今天","消耗 今天"),("消耗 昨天","消耗 昨天"),("ROI 今天","ROI 今天"),("ROI 昨天","ROI 昨天")]:
+        name=f"{nm} {f}"
+        c=colmap.get(name)
+        if not c:
+            if all(f"{nm} 消耗 今天" not in x for x in hdr) and name not in hdr:
+                idx={"消耗 今天":0,"消耗 昨天":1,"ROI 今天":2,"ROI 昨天":3}[f]
+                c=fallback[nm][idx]
+            else:
+                missing.append(name); continue
+        items.append({"range":f"{c}2:{c}25","cells":[[{"value":v}] for v in val[(nm,f)]]})
+if missing: print("WARN| ROI表未找到列",missing)
+# 子表一：小时转化率（A:AB，28 列三率）
+rate_cols=cols[:28]; rate_data=[r[:28] for r in data]
+dtypes={"小时":"object"}; fmts={}
+for c in rate_cols[1:]: dtypes[c]="float64"; fmts[c]="0.00%"
 payload={"sheets":[
   {"name":"小时转化率","start_cell":"A2","header":False,"mode":"overwrite",
    "columns":rate_cols,"data":rate_data,"dtypes":dtypes,"formats":fmts},
-  {"name":"小时消耗ROI","start_cell":"A2","header":False,"mode":"overwrite",
-   "columns":roi_cols,"data":roi_data,"dtypes":rdtypes,"formats":rfmts},
 ]}
 with tempfile.NamedTemporaryFile("w",suffix=".json",delete=False) as f:
     json.dump(payload,f,ensure_ascii=False); path=f.name
 r=subprocess.run([LARK,"sheets","+table-put","--spreadsheet-token",TOKEN_SHEET,
                   "--sheets",f"@{path}","--format","json"],capture_output=True,text=True)
-print(r.stdout[:600]); print(r.stderr[:200])
+print("RATE|",r.stdout[:300],r.stderr[:200])
 os.unlink(path)
+with tempfile.NamedTemporaryFile("w",suffix=".json",delete=False) as f:
+    json.dump(items,f,ensure_ascii=False); wpath=f.name
+r=subprocess.run([LARK,"sheets","+cells-set","--spreadsheet-token",TOKEN_SHEET,
+                  "--sheet-name","小时消耗ROI","--writes",f"@{wpath}","--format","json"],capture_output=True,text=True)
+print("ROI|",r.stdout[:300],r.stderr[:200])
+os.unlink(wpath)
 print("SYNC|updated_utc=",d["updated_utc"],"|rows",len(data),"|cols",len(cols),
       "|excluded=",d.get("excluded",{}).get("Jelenew+"))
 
