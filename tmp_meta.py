@@ -1,14 +1,22 @@
 import os, json, requests
 TOKEN=os.environ["META_ACCESS_TOKEN"]; V=os.environ.get("META_API_VERSION","v20.0")
 B=f"https://graph.facebook.com/{V}"
-TR='{"since":"2026-11-26","until":"2026-11-26"}'
-def try_q(tag, params):
-    r=requests.get(f"{B}/act_750289240467952/insights", params={**params,"access_token":TOKEN}, timeout=90)
+ACC=[("QMDT","750289240467952"),("SALES3","5600626876733411"),("JELENEWPLUS","1614799860253372")]
+TR='{"since":"2026-11-20","until":"2026-11-27"}'
+F=["add_to_cart","omni_add_to_cart","initiate_checkout","omni_initiated_checkout",
+   "purchase","omni_purchase","link_click","landing_page_view"]
+for tag, aid in ACC:
+    r=requests.get(f"{B}/act_{aid}/insights", params={
+        "fields":"spend,impressions,clicks,actions,date_start,date_stop",
+        "breakdowns":"hourly_stats_aggregated_by_advertiser_time_zone",
+        "time_range":TR,"level":"account","limit":"500","access_token":TOKEN}, timeout=120)
     if r.status_code!=200:
-        print(f"FAIL|{tag}|{r.text[:220].replace(chr(10),' ')}"); return
+        print(f"FAIL|{tag}|{r.text[:200]}"); continue
     d=r.json().get("data",[])
-    print(f"OK|{tag}|rows={len(d)}|{json.dumps(d[:2],ensure_ascii=False)[:350]}")
-try_q("hourly_breakdown_enum", {"fields":"spend,actions","breakdowns":"hourly_stats_aggregated_by_advertiser_time_zone","time_range":TR,"level":"account"})
-try_q("hour_level_ad", {"fields":"spend,actions","breakdowns":"hour","time_range":TR,"level":"ad","time_increment":"1","limit":"50"})
-try_q("hour_level_campaign", {"fields":"spend,actions","breakdowns":"hour","time_range":TR,"level":"campaign","limit":"50"})
-try_q("daily_baseline", {"fields":"spend,actions,clicks,impressions","time_range":TR,"level":"account","time_increment":"1"})
+    print(f"CNT|{tag}|{len(d)}")
+    for row in d:
+        acts={a["action_type"]:float(a["value"]) for a in row.get("actions",[])}
+        h=row.get("hourly_stats_aggregated_by_advertiser_time_zone","?")
+        line=f"H|{tag}|{row['date_start']}|{h}|{row.get('spend','0')}|{row.get('impressions','0')}|{row.get('clicks','0')}"
+        for k in F: line+=f"|{acts.get(k,0):.0f}"
+        print(line)
