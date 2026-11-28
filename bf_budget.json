@@ -1,18 +1,18 @@
 {
- "updated_utc": "2026-11-28T03:21:07Z",
+ "updated_utc": "2026-11-28T04:20:55Z",
  "meta": {
   "QMDT": {
-   "budget": 6140.0,
-   "campaign_level": 5830.0,
-   "adset_level": 310.0,
+   "budget": 6320.0,
+   "campaign_level": 5950.0,
+   "adset_level": 370.0,
    "campaigns": 4,
    "adsets": 9,
    "excluded": []
   },
   "销售三部": {
-   "budget": 498.0,
+   "budget": 578.0,
    "campaign_level": 0.0,
-   "adset_level": 498.0,
+   "adset_level": 578.0,
    "campaigns": 1,
    "adsets": 3,
    "excluded": []
