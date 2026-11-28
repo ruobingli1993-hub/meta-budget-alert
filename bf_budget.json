@@ -1,25 +1,25 @@
 {
- "updated_utc": "2026-11-28T09:20:59Z",
+ "updated_utc": "2026-11-28T10:21:10Z",
  "meta": {
   "QMDT": {
-   "budget": 5700.0,
-   "campaign_level": 5450.0,
-   "adset_level": 250.0,
+   "budget": 5090.0,
+   "campaign_level": 4880.0,
+   "adset_level": 210.0,
    "campaigns": 4,
    "adsets": 9,
    "excluded": []
   },
   "销售三部": {
-   "budget": 578.0,
+   "budget": 480.0,
    "campaign_level": 0.0,
-   "adset_level": 578.0,
+   "adset_level": 480.0,
    "campaigns": 1,
    "adsets": 3,
    "excluded": []
   },
   "Jelenew+": {
-   "budget": 950.0,
-   "campaign_level": 950.0,
+   "budget": 850.0,
+   "campaign_level": 850.0,
    "adset_level": 0.0,
    "campaigns": 2,
    "adsets": 3,
