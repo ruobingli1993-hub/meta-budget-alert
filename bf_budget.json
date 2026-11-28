@@ -1,5 +1,5 @@
 {
- "updated_utc": "2026-11-28T00:20:59Z",
+ "updated_utc": "2026-11-28T01:21:01Z",
  "meta": {
   "QMDT": {
    "budget": 6140.0,
@@ -18,8 +18,8 @@
    "excluded": []
   },
   "Jelenew+": {
-   "budget": 830.0,
-   "campaign_level": 830.0,
+   "budget": 890.0,
+   "campaign_level": 890.0,
    "adset_level": 0.0,
    "campaigns": 2,
    "adsets": 3,
@@ -30,11 +30,11 @@
  },
  "google": {
   "mai": 1928.72,
-  "nonmai": 2410.4,
+  "nonmai": 2442.4,
   "per_account": {
    "8385977843": {
     "mai": 1928.72,
-    "nonmai": 2408.4,
+    "nonmai": 2440.4,
     "count": {
      "mai": 25,
      "nonmai": 25
