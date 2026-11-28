@@ -152,7 +152,8 @@ if b:
             fgh.append([{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
             kl.append([{"value":gv[0]},{"value":gv[1]}])
         elif i>idx:
-            fgh.append([{}]*3); kl.append([{}]*2)
+            fgh.append([{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
+            kl.append([{"value":gv[0]},{"value":gv[1]}])
         else:
             fgh.append([{}]*3 if filled(old[i],[5,6,7]) else
                        [{"value":cur[0]},{"value":cur[1]},{"value":cur[2]}])
@@ -162,7 +163,7 @@ if b:
     lab=labels[idx] if labels[idx] is not None else cur_h
     notes=[
      "每格 = 该小时在平台上的实时日预算（同一份日预算，未改动则各小时相同；一旦改预算，改动后读到的那小时起写入新值，已跑过的小时保持原值留痕）",
-     f"账户时区 America/Phoenix（UTC-7），小时标签与 小时转化率/小时消耗ROI 的 00–23 一一对应；本次写入标签 {lab} 的那一行（当地 {cur_h:02d}:00–{cur_h+1:02d}:00，正在进行中），之后的格子留空待到点",
+     f"账户时区 America/Phoenix（UTC-7），小时标签与 小时转化率/小时消耗ROI 的 00–23 一一对应；本次写入标签 {lab} 的那一行（当地 {cur_h:02d}:00–{cur_h+1:02d}:00，正在进行中），未到的小时按当前预算预填，改预算则从下一小时起显示新值",
      f"数据源：bf_budget.json（更新于 {bud_utc}）——Meta 为 campaign+adset 日预算合计（Jelenew+ 已剔除 tofu），Google 为 campaign_budget 去重后按 label 拆 mai / 非mai",
      'B、C 列 = 平台合计，公式 =IF(COUNT(...)=0,"",SUM(...))；金额 USD',
     ]
@@ -176,11 +177,6 @@ if b:
                        "--writes",f"@{p2}","--format","json"],capture_output=True,text=True)
     ok='"succeeded": 4' in r2.stdout
     print("BF|","ok" if ok else r2.stdout[:300])
-    if idx < 23:
-        for rng in (f"F{idx+4}:H26", f"K{idx+4}:L26"):
-            subprocess.run([LARK,"sheets","+cells-clear","--spreadsheet-token",TOKEN_SHEET,
-                            "--sheet-name","BF by hour budget","--range",rng,"--yes"],
-                           capture_output=True,text=True)
     os.unlink(p2)
     print(f"BFNOW|phx_h={cur_h} |row={idx+3} |label={lab} |QMDT {q} 销售 {s3} Jelenew {jl} |mai {mai} nonmai {nm} |budget_utc {bud_utc}")
 else:
