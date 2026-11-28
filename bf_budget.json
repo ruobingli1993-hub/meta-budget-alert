@@ -1,10 +1,10 @@
 {
- "updated_utc": "2026-11-28T06:21:03Z",
+ "updated_utc": "2026-11-28T07:20:58Z",
  "meta": {
   "QMDT": {
-   "budget": 6920.0,
-   "campaign_level": 6550.0,
-   "adset_level": 370.0,
+   "budget": 5700.0,
+   "campaign_level": 5450.0,
+   "adset_level": 250.0,
    "campaigns": 4,
    "adsets": 9,
    "excluded": []
