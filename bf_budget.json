@@ -1,10 +1,10 @@
 {
- "updated_utc": "2026-11-27T23:24:33Z",
+ "updated_utc": "2026-11-28T00:20:59Z",
  "meta": {
   "QMDT": {
-   "budget": 6096.0,
+   "budget": 6140.0,
    "campaign_level": 5830.0,
-   "adset_level": 266.0,
+   "adset_level": 310.0,
    "campaigns": 4,
    "adsets": 9,
    "excluded": []
@@ -30,11 +30,11 @@
  },
  "google": {
   "mai": 1928.72,
-  "nonmai": 2327.4,
+  "nonmai": 2410.4,
   "per_account": {
    "8385977843": {
     "mai": 1928.72,
-    "nonmai": 2325.4,
+    "nonmai": 2408.4,
     "count": {
      "mai": 25,
      "nonmai": 25
